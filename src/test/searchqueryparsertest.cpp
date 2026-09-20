@@ -1421,3 +1421,77 @@ TEST_F(SearchQueryParserTest, QuotedOrOperator) {
     pTrackI->setComment("house");
     EXPECT_TRUE(pQuery->match(pTrackI));
 }
+
+TEST_F(SearchQueryParserTest, MuxicEnergyOperator) {
+    auto pQuery(m_parser.parseQuery("energy:>=7", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral("muxic_energy >= 7")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicEnergyRange) {
+    auto pQuery(m_parser.parseQuery("energy:5-8", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral("muxic_energy BETWEEN 5 AND 8")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicEnergyShortName) {
+    auto pQuery(m_parser.parseQuery("en:<4", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral("muxic_energy < 4")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicDanceability) {
+    auto pQuery(m_parser.parseQuery("danceability:>0.7", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral("muxic_danceability > 0.7")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagIsExact) {
+    auto pQuery(m_parser.parseQuery("tag:vocal", QString()));
+
+    // The commas of the stored form make the match exact: a track tagged
+    // "vocalist" does not match "vocal".
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,vocal,%' ESCAPE '\\'")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagWithSpaces) {
+    auto pQuery(m_parser.parseQuery("tag:\"two words\"", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,two words,%' ESCAPE '\\'")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagIsLowerCase) {
+    auto pQuery(m_parser.parseQuery("tag:Vocal", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,vocal,%' ESCAPE '\\'")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagNegated) {
+    auto pQuery(m_parser.parseQuery("-tag:vocal", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "NOT (muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,vocal,%' ESCAPE '\\')")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagMissing) {
+    auto pQuery(m_parser.parseQuery("tag:\"\"", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "muxic_tags IS NULL OR muxic_tags IS ''")),
+            qPrintable(pQuery->toSql()));
+}

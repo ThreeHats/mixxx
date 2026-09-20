@@ -1512,6 +1512,7 @@ add_library(
   src/musicbrainz/web/coverartarchivelinkstask.cpp
   src/musicbrainz/web/musicbrainzrecordingstask.cpp
   src/muxic/librarycolumns.cpp
+  src/muxic/searchfilters.cpp
   src/muxic/trackmeta.cpp
   src/muxic/trackmetadao.cpp
   src/nativeeventhandlerwin.cpp

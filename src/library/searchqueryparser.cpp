@@ -6,6 +6,8 @@
 
 #include "library/searchquery.h"
 #include "library/trackcollection.h"
+#include "muxic/searchfilters.h"
+#include "muxic/trackmeta.h"
 #include "track/keyutils.h"
 #include "util/assert.h"
 
@@ -89,6 +91,14 @@ SearchQueryParser::SearchQueryParser(TrackCollection* pTrackCollection, QStringL
                      << "r" << "rating"
                      << "br" << "bitrate"
                      << "id";
+    // The columns of the muxic fork, see src/muxic/trackmeta.h
+    m_textFilters << QStringLiteral("tag")
+                  << QStringLiteral("tags");
+    m_numericFilters << QStringLiteral("en")
+                     << QStringLiteral("energy")
+                     << QStringLiteral("dance")
+                     << QStringLiteral("danceability");
+
     m_specialFilters << "y" << "year"
                      << "k" << "key"
                      << "b" << "bpm"
@@ -145,6 +155,12 @@ SearchQueryParser::SearchQueryParser(TrackCollection* pTrackCollection, QStringL
     m_fieldToSqlColumns["dateadded"] << "datetime_added";
     m_fieldToSqlColumns["datetime_added"] << "datetime_added";
     m_fieldToSqlColumns["id"] << "id";
+    m_fieldToSqlColumns["tag"] << muxic::kColumnTags;
+    m_fieldToSqlColumns["tags"] << muxic::kColumnTags;
+    m_fieldToSqlColumns["en"] << muxic::kColumnEnergy;
+    m_fieldToSqlColumns["energy"] << muxic::kColumnEnergy;
+    m_fieldToSqlColumns["dance"] << muxic::kColumnDanceability;
+    m_fieldToSqlColumns["danceability"] << muxic::kColumnDanceability;
 
     m_textFilterMatcher = QRegularExpression(QString("^-?(%1):(.*)$").arg(m_textFilters.join("|")));
     m_numericFilterMatcher = QRegularExpression(
@@ -227,6 +243,8 @@ void SearchQueryParser::parseTokens(QStringList tokens,
                     pNode = std::make_unique<NoCrateFilterNode>(
                           &m_pTrackCollection->crates());
                     qDebug() << pNode->toSql();
+                } else if (field == muxic::kColumnTags) {
+                    pNode = std::make_unique<muxic::NoTagFilterNode>();
                 } else {
                     pNode = std::make_unique<NullOrEmptyTextFilterNode>(
                           m_pTrackCollection->database(), m_fieldToSqlColumns[field]);
@@ -236,6 +254,14 @@ void SearchQueryParser::parseTokens(QStringList tokens,
                 if (field == "crate") {
                     pNode = std::make_unique<CrateFilterNode>(
                             &m_pTrackCollection->crates(), argument);
+                } else if (field == muxic::kColumnTags) {
+                    // A tag matches as a whole, thus the argument takes the
+                    // same normalization as a stored tag.
+                    const QStringList tags = muxic::parseTags(argument);
+                    if (!tags.isEmpty()) {
+                        pNode = std::make_unique<muxic::TagFilterNode>(
+                                m_pTrackCollection->database(), tags.first());
+                    }
                 } else {
                     pNode = std::make_unique<TextFilterNode>(
                             m_pTrackCollection->database(),
@@ -249,9 +275,20 @@ void SearchQueryParser::parseTokens(QStringList tokens,
             QString argument = getTextArgument(numericFilterMatch.captured(2), &tokens).argument;
 
             if (!argument.isEmpty()) {
+                const QString column = resolveFilter(field);
                 if (argument == kMissingFieldSearchTerm) {
                     pNode = std::make_unique<NullNumericFilterNode>(
                          m_fieldToSqlColumns[field]);
+                } else if (column == muxic::kColumnEnergy) {
+                    pNode = std::make_unique<muxic::MetaNumericFilterNode>(
+                            m_fieldToSqlColumns[field],
+                            argument,
+                            muxic::MetaNumericFilterNode::Field::Energy);
+                } else if (column == muxic::kColumnDanceability) {
+                    pNode = std::make_unique<muxic::MetaNumericFilterNode>(
+                            m_fieldToSqlColumns[field],
+                            argument,
+                            muxic::MetaNumericFilterNode::Field::Danceability);
                 } else {
                     pNode = std::make_unique<NumericFilterNode>(
                          m_fieldToSqlColumns[field], argument);
