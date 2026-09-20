@@ -107,16 +107,6 @@ QList<StemConversionManager::JobStatus> StemConversionManager::jobStatuses() con
     return statuses;
 }
 
-int StemConversionManager::pendingCount() const {
-    int count = 0;
-    for (const JobEntry& entry : m_jobs) {
-        if (entry.pJob) {
-            count++;
-        }
-    }
-    return count;
-}
-
 void StemConversionManager::startNext() {
     for (const JobEntry& entry : std::as_const(m_jobs)) {
         if (entry.pJob && entry.pJob->state() != StemConversionJob::State::Queued) {
@@ -183,7 +173,6 @@ void StemConversionManager::addStemTrackToLibrary(JobEntry* pEntry) {
         kLogger.info() << "Stem file sample rate" << stemSampleRate
                        << "differs from the source rate" << sourceSampleRate;
     }
-    emit trackConverted(pSourceTrack->getId(), pStemTrack->getId());
 }
 
 int StemConversionManager::indexOfJob(int jobId) const {

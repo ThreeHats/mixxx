@@ -95,10 +95,6 @@ StemConversionJob::~StemConversionJob() {
     }
 }
 
-TrackId StemConversionJob::sourceTrackId() const {
-    return m_pSourceTrack ? m_pSourceTrack->getId() : TrackId();
-}
-
 QString StemConversionJob::sourceTitle() const {
     if (!m_pSourceTrack) {
         return QString();

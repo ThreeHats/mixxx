@@ -8,7 +8,6 @@
 
 #include "stems/stemconversionsettings.h"
 #include "track/track_decl.h"
-#include "track/trackid.h"
 #include "util/parented_ptr.h"
 
 class QProcess;
@@ -37,7 +36,6 @@ class StemConversionJob : public QObject {
             QObject* pParent = nullptr);
     ~StemConversionJob() override;
 
-    TrackId sourceTrackId() const;
     const TrackPointer& sourceTrack() const {
         return m_pSourceTrack;
     }

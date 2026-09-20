@@ -8,7 +8,6 @@
 #include "preferences/usersettings.h"
 #include "stems/stemconversionjob.h"
 #include "track/track_decl.h"
-#include "track/trackid.h"
 
 class TrackCollectionManager;
 
@@ -43,12 +42,9 @@ class StemConversionManager : public QObject {
     void clearFinished();
 
     QList<JobStatus> jobStatuses() const;
-    /// The number of jobs that wait or run.
-    int pendingCount() const;
 
   signals:
     void jobsChanged();
-    void trackConverted(TrackId sourceTrackId, TrackId stemTrackId);
 
   private:
     struct JobEntry {
