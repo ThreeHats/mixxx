@@ -1511,6 +1511,8 @@ add_library(
   src/musicbrainz/web/coverartarchiveimagetask.cpp
   src/musicbrainz/web/coverartarchivelinkstask.cpp
   src/musicbrainz/web/musicbrainzrecordingstask.cpp
+  src/muxic/relatedtracks/relatedtracksfeature.cpp
+  src/muxic/relatedtracks/relatedtrackstablemodel.cpp
   src/muxic/relatedtracks/relationsuggester.cpp
   src/muxic/relatedtracks/trackrelationstorage.cpp
   src/nativeeventhandlerwin.cpp

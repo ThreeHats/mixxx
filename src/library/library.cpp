@@ -33,6 +33,7 @@
 #include "library/traktor/traktorfeature.h"
 #include "mixer/playermanager.h"
 #include "moc_library.cpp"
+#include "muxic/relatedtracks/relatedtracksfeature.h"
 #include "util/assert.h"
 #include "util/logger.h"
 #include "util/sandbox.h"
@@ -127,6 +128,9 @@ Library::Library(
             &Library::exportCrate, // signal-to-signal
             Qt::DirectConnection);
 #endif
+
+    m_pRelatedTracksFeature = make_parented<muxic::RelatedTracksFeature>(this, m_pConfig);
+    addFeature(m_pRelatedTracksFeature);
 
     m_pBrowseFeature = make_parented<BrowseFeature>(
             this, m_pConfig, pRecordingManager);
