@@ -36,6 +36,14 @@ void WSingletonContainer::setup(const QDomNode& node, const SkinContext& context
 
 void WSingletonContainer::showEvent(QShowEvent* event) {
     Q_UNUSED(event);
+    // A singleton that lives in another window, the library in the library
+    // window for example, keeps that window. Its owner puts it back.
+    if (m_pWidget && m_pWidget->window() == window()) {
+        adoptSingletonWidget();
+    }
+}
+
+void WSingletonContainer::adoptSingletonWidget() {
     if (m_pWidget) {
         // The widget's current parent is some other SingletonContainer,
         // or some other widget in the skin if the widget has been newly
