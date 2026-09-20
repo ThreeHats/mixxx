@@ -66,10 +66,14 @@ void DlgStemConversion::slotRefresh() {
         jobTable->setItem(row,
                 kColumnState,
                 new QTableWidgetItem(StemConversionJob::stateText(status.state)));
+        const bool hasProgress = status.state != StemConversionJob::State::Failed &&
+                status.state != StemConversionJob::State::Cancelled;
         jobTable->setItem(row,
                 kColumnProgress,
-                new QTableWidgetItem(QStringLiteral("%1 %").arg(
-                        QString::number(qRound(status.progress * 100)))));
+                new QTableWidgetItem(hasProgress
+                                ? QStringLiteral("%1 %").arg(QString::number(
+                                          qRound(status.progress * 100)))
+                                : QString()));
         jobTable->setItem(row, kColumnMessage, new QTableWidgetItem(status.message));
     }
     jobTable->resizeColumnToContents(kColumnState);
