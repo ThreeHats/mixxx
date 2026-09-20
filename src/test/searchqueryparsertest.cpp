@@ -1495,3 +1495,15 @@ TEST_F(SearchQueryParserTest, MuxicTagMissing) {
                          "muxic_tags IS NULL OR muxic_tags IS ''")),
             qPrintable(pQuery->toSql()));
 }
+
+TEST_F(SearchQueryParserTest, MuxicTagList) {
+    auto pQuery(m_parser.parseQuery("tag:bass,vocal", QString()));
+
+    // Two tags in one keyword mean both tags.
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "(muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,bass,%' ESCAPE '\\') AND "
+                         "(muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,vocal,%' ESCAPE '\\')")),
+            qPrintable(pQuery->toSql()));
+}

@@ -258,9 +258,16 @@ void SearchQueryParser::parseTokens(QStringList tokens,
                     // A tag matches as a whole, thus the argument takes the
                     // same normalization as a stored tag.
                     const QStringList tags = muxic::parseTags(argument);
-                    if (!tags.isEmpty()) {
+                    if (tags.size() == 1) {
                         pNode = std::make_unique<muxic::TagFilterNode>(
                                 m_pTrackCollection->database(), tags.first());
+                    } else if (tags.size() > 1) {
+                        auto gNode = std::make_unique<AndNode>();
+                        for (const QString& tag : tags) {
+                            gNode->addNode(std::make_unique<muxic::TagFilterNode>(
+                                    m_pTrackCollection->database(), tag));
+                        }
+                        pNode = std::move(gNode);
                     }
                 } else {
                     pNode = std::make_unique<TextFilterNode>(

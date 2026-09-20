@@ -108,6 +108,7 @@ high ratio means a quiet track. Ascending order puts the quiet tracks first.
 | `tag:vocal` | the tag `vocal`, whole and exact |
 | `tag:"two words"` | a tag with a space |
 | `-tag:vocal` | no tag `vocal`, and tracks with no tag at all |
+| `tag:bass,vocal` | both tags |
 | `tag:""` | no tag at all |
 
 `en:` is short for `energy:`. `dance:` is short for `danceability:`. `tags:` is
