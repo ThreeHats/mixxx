@@ -59,11 +59,12 @@ class WTrackMenu : public QMenu {
         SelectInLibrary = 1 << 15,
         Analyze = 1 << 16,
         FindOnWeb = 1 << 17,
+        RelatedTracks = 1 << 18,
         TrackModelFeatures = Remove | HideUnhidePurge,
         All = AutoDJ | LoadTo | Playlist | Crate | Remove | Metadata | Reset | Analyze |
                 BPM | Color | HideUnhidePurge | RemoveFromDisk | FileBrowser |
                 Properties | SearchRelated | UpdateReplayGainFromPregain | SelectInLibrary |
-                FindOnWeb
+                FindOnWeb | RelatedTracks
     };
     Q_DECLARE_FLAGS(Features, Feature)
 
@@ -83,6 +84,7 @@ class WTrackMenu : public QMenu {
             WTrackMenu::Feature::Properties |
             WTrackMenu::Feature::UpdateReplayGainFromPregain |
             WTrackMenu::Feature::FindOnWeb |
+            WTrackMenu::Feature::RelatedTracks |
             WTrackMenu::Feature::SelectInLibrary};
 
     WTrackMenu(QWidget* parent,
@@ -184,6 +186,12 @@ class WTrackMenu : public QMenu {
     void slotPopulatePlaylistMenu();
     void slotPopulateCrateMenu();
     void addSelectionToNewCrate();
+
+    // Related tracks
+    void relateSelectionToTrack(TrackId targetTrackId);
+    void slotPopulateRelateToMenu();
+    void slotRemoveRelations();
+    void slotShowRelatedTracks();
 
     // Auto DJ
     void slotAddToAutoDJBottom();
@@ -289,6 +297,7 @@ class WTrackMenu : public QMenu {
     parented_ptr<QMenu> m_pSamplerMenu;
     parented_ptr<QMenu> m_pPlaylistMenu;
     parented_ptr<QMenu> m_pCrateMenu;
+    parented_ptr<QMenu> m_pRelateToMenu;
     parented_ptr<QMenu> m_pMetadataMenu;
     parented_ptr<QMenu> m_pMetadataUpdateExternalCollectionsMenu;
     parented_ptr<QMenu> m_pHotcueMenu;
@@ -336,6 +345,10 @@ class WTrackMenu : public QMenu {
 
     // Select track in library
     parented_ptr<QAction> m_pSelectInLibraryAct;
+
+    // Related tracks
+    parented_ptr<QAction> m_pRemoveRelationsAct;
+    parented_ptr<QAction> m_pShowRelatedTracksAct;
 
     // BPM feature
     parented_ptr<QAction> m_pBpmLockAction;
@@ -401,6 +414,7 @@ class WTrackMenu : public QMenu {
     bool m_bFindOnWebMenuLoaded;
     bool m_bPlaylistMenuLoaded;
     bool m_bCrateMenuLoaded;
+    bool m_bRelateToMenuLoaded;
 
     Features m_eActiveFeatures;
     const Features m_eTrackModelFeatures;
