@@ -5295,6 +5295,8 @@ if(OSC)
       src/osc/oscmessage.cpp
       src/osc/oscpolicy.cpp
       src/osc/oscservice.cpp
+      src/preferences/dialog/dlgprefosc.cpp
+      src/preferences/dialog/dlgprefoscdlg.ui
   )
   target_compile_definitions(mixxx-lib PUBLIC __OSC__)
   target_link_libraries(mixxx-lib PRIVATE lo::lo)

@@ -49,6 +49,10 @@
 #include "preferences/dialog/dlgprefmodplug.h"
 #endif // __MODPLUG__
 
+#ifdef __OSC__
+#include "preferences/dialog/dlgprefosc.h"
+#endif // __OSC__
+
 #ifdef Q_OS_MACOS
 #include "util/darkappearance.h"
 #endif
@@ -250,6 +254,14 @@ DlgPreferences::DlgPreferences(
             tr("Modplug Decoder"),
             "ic_preferences_modplug.svg");
 #endif // __MODPLUG__
+
+#ifdef __OSC__
+    addPageWidget(PreferencesPage(
+                          new DlgPrefOsc(this, m_pConfig),
+                          new QTreeWidgetItem(contentsTreeWidget, QTreeWidgetItem::Type)),
+            tr("OSC"),
+            "ic_preferences_broadcast.svg");
+#endif // __OSC__
 
     // Find accept and apply buttons
     const auto buttons = buttonBox->buttons();
