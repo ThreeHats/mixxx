@@ -384,6 +384,22 @@ void WMainMenuBar::initialize() {
             ConfigKey(kSkinGroup, QStringLiteral("show_maximized_library")));
     pViewMenu->addAction(pViewMaximizeLibrary);
 
+    QString libraryWindowTitle = tr("Library in a Window of its Own");
+    QString libraryWindowText =
+            tr("Show the track library in a window that you can put on "
+               "another screen.");
+    auto* pViewLibraryWindow = new QAction(libraryWindowTitle, this);
+    pViewLibraryWindow->setCheckable(true);
+    m_pKeyboard->registerMenuBarActionSetShortcut(
+            pViewLibraryWindow,
+            ConfigKey(kKbdShortcutsGroup, QStringLiteral("ViewMenu_ShowLibraryWindow")),
+            QStringLiteral("Ctrl+7"));
+    pViewLibraryWindow->setStatusTip(libraryWindowText);
+    pViewLibraryWindow->setWhatsThis(buildWhatsThis(libraryWindowTitle, libraryWindowText));
+    createVisibilityControl(pViewLibraryWindow,
+            ConfigKey(kSkinGroup, QStringLiteral("show_library_window")));
+    pViewMenu->addAction(pViewLibraryWindow);
+
     pViewMenu->addSeparator();
 
     QString autoDJTitle = tr("Show Auto DJ");
@@ -423,6 +439,8 @@ void WMainMenuBar::initialize() {
     }
 
     pViewFullScreen->setShortcuts(shortcuts);
+    // The library window must also toggle the full screen of the main window.
+    pViewFullScreen->setShortcutContext(Qt::ApplicationShortcut);
     pViewFullScreen->setCheckable(true);
     pViewFullScreen->setChecked(false);
     pViewFullScreen->setStatusTip(fullScreenText);

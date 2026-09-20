@@ -9,6 +9,7 @@ class SkinControls {
   private:
     ControlPushButton m_showEffectRack;
     ControlPushButton m_showLibraryCoverArt;
+    ControlPushButton m_showLibraryWindow;
     ControlPushButton m_showMicrophones;
     ControlPushButton m_showPreviewDecks;
     ControlPushButton m_showSamplers;

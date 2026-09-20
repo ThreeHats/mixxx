@@ -13,6 +13,9 @@ SkinControls::SkinControls()
           m_showLibraryCoverArt(ConfigKey(kSkinGroup, QStringLiteral("show_library_coverart")),
                   true,
                   true),
+          m_showLibraryWindow(ConfigKey(kSkinGroup, QStringLiteral("show_library_window")),
+                  true,
+                  false),
           m_showMicrophones(ConfigKey(kSkinGroup, QStringLiteral("show_microphones")),
                   true,
                   true),
@@ -45,6 +48,7 @@ SkinControls::SkinControls()
                   false) {
     m_showEffectRack.setButtonMode(mixxx::control::ButtonMode::Toggle);
     m_showLibraryCoverArt.setButtonMode(mixxx::control::ButtonMode::Toggle);
+    m_showLibraryWindow.setButtonMode(mixxx::control::ButtonMode::Toggle);
     m_showMicrophones.setButtonMode(mixxx::control::ButtonMode::Toggle);
     m_showPreviewDecks.setButtonMode(mixxx::control::ButtonMode::Toggle);
     m_showSamplers.setButtonMode(mixxx::control::ButtonMode::Toggle);

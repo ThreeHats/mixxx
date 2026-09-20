@@ -11,6 +11,7 @@
 
 class ControlObject;
 class DlgDeveloperTools;
+class LibraryWindowManager;
 class DlgPreferences;
 class DlgKeywheel;
 class GuiTick;
@@ -138,6 +139,7 @@ class MixxxMainWindow : public QMainWindow {
     parented_ptr<QMessageBox> m_noAuxInputDialog;
 
     std::shared_ptr<mixxx::skin::SkinLoader> m_pSkinLoader;
+    std::unique_ptr<LibraryWindowManager> m_pLibraryWindowManager;
     GuiTick* m_pGuiTick;
     VisualsManager* m_pVisualsManager;
 
