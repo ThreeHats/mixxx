@@ -2864,6 +2864,7 @@ if(STEM)
     PRIVATE
       src/sources/soundsourcestem.cpp
       src/stems/stemconversionjob.cpp
+      src/stems/stemconversionmanager.cpp
       src/stems/stemconversionsettings.cpp
       src/stems/stemtrackcopy.cpp
       src/track/steminfoimporter.cpp
