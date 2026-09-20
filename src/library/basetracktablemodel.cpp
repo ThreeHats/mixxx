@@ -26,6 +26,7 @@
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "moc_basetracktablemodel.cpp"
+#include "muxic/librarycolumns.h"
 #include "track/keyutils.h"
 #include "track/track.h"
 #include "util/assert.h"
@@ -334,7 +335,11 @@ bool BaseTrackTableModel::isColumnHiddenByDefault(
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_SAMPLERATE) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_TIMESPLAYED) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_TRACKNUMBER) ||
-            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_YEAR);
+            column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_YEAR) ||
+            column == fieldIndex(ColumnCache::COLUMN_MUXIC_ENERGY) ||
+            column == fieldIndex(ColumnCache::COLUMN_MUXIC_DANCEABILITY) ||
+            column == fieldIndex(ColumnCache::COLUMN_MUXIC_TAGS) ||
+            column == fieldIndex(ColumnCache::COLUMN_MUXIC_LUFS);
 }
 
 QAbstractItemDelegate* BaseTrackTableModel::delegateForColumn(
@@ -540,6 +545,15 @@ bool BaseTrackTableModel::setData(
         }
         default:
             return false;
+        }
+    }
+
+    if (role == Qt::EditRole) {
+        // The muxic columns are in a fork table of their own, thus they take
+        // the data access object instead of the track object.
+        const auto field = mapColumn(column);
+        if (muxic::isLibraryColumn(field)) {
+            return muxic::setEditedValue(getTrackId(index), field, value);
         }
     }
 
@@ -838,6 +852,11 @@ QVariant BaseTrackTableModel::roleValue(
             // Not yet supported
             DEBUG_ASSERT(rawValue.isNull());
             break;
+        case ColumnCache::COLUMN_MUXIC_ENERGY:
+        case ColumnCache::COLUMN_MUXIC_DANCEABILITY:
+        case ColumnCache::COLUMN_MUXIC_TAGS:
+        case ColumnCache::COLUMN_MUXIC_LUFS:
+            return muxic::displayValue(field, rawValue);
         default:
             // Otherwise, just use the column value
             break;
@@ -845,6 +864,9 @@ QVariant BaseTrackTableModel::roleValue(
         break;
     case Qt::EditRole:
         switch (field) {
+        case ColumnCache::COLUMN_MUXIC_ENERGY:
+        case ColumnCache::COLUMN_MUXIC_TAGS:
+            return muxic::editValue(field, rawValue);
         case ColumnCache::COLUMN_LIBRARYTABLE_BPM: {
             bool ok;
             const auto bpmValue = rawValue.toDouble(&ok);
@@ -908,6 +930,9 @@ QVariant BaseTrackTableModel::roleValue(
         case ColumnCache::COLUMN_LIBRARYTABLE_TRACKNUMBER:
         case ColumnCache::COLUMN_PLAYLISTTRACKSTABLE_POSITION:
         case ColumnCache::COLUMN_LIBRARYTABLE_REPLAYGAIN:
+        case ColumnCache::COLUMN_MUXIC_ENERGY:
+        case ColumnCache::COLUMN_MUXIC_DANCEABILITY:
+        case ColumnCache::COLUMN_MUXIC_LUFS:
         case ColumnCache::COLUMN_LIBRARYTABLE_TUNING_FREQUENCY: {
             // We need to cast to int due to a bug similar to
             // https://bugreports.qt.io/browse/QTBUG-67582
@@ -1031,6 +1056,8 @@ Qt::ItemFlags BaseTrackTableModel::readWriteFlags(
             column == fieldIndex(ColumnCache::COLUMN_TRACKLOCATIONSTABLE_LOCATION) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_REPLAYGAIN) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_SAMPLERATE) ||
+            column == fieldIndex(ColumnCache::COLUMN_MUXIC_DANCEABILITY) ||
+            column == fieldIndex(ColumnCache::COLUMN_MUXIC_LUFS) ||
             column == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_WAVESUMMARYHEX)) {
         return readOnlyFlags(index);
     }

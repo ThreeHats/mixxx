@@ -5,6 +5,7 @@
 #include "library/searchqueryparser.h"
 #include "library/trackcollection.h"
 #include "moc_basetrackcache.cpp"
+#include "muxic/trackmeta.h"
 #include "track/globaltrackcache.h"
 #include "track/keyutils.h"
 #include "track/track.h"
@@ -223,6 +224,9 @@ bool BaseTrackCache::updateIndexWithQuery(const QString& queryString) {
                 // Here we want to cache the display string with native separators.
                 QString location = query.value(i).toString();
                 record[i] = QDir::toNativeSeparators(location);
+            } else if (fieldIndex(ColumnCache::COLUMN_MUXIC_LUFS) == i) {
+                // The column holds the ReplayGain ratio. Cache the loudness.
+                record[i] = muxic::lufsFromReplayGainRatio(query.value(i));
             } else {
                 record[i] = query.value(i);
             }
@@ -404,7 +408,23 @@ QVariant BaseTrackCache::getTrackValueForColumn(TrackPointer pTrack,
     if (fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COVERART_TYPE) == column) {
         return QVariant{static_cast<int>(pTrack->getCoverInfo().type)};
     }
+    if (fieldIndex(ColumnCache::COLUMN_MUXIC_ENERGY) == column ||
+            fieldIndex(ColumnCache::COLUMN_MUXIC_DANCEABILITY) == column ||
+            fieldIndex(ColumnCache::COLUMN_MUXIC_TAGS) == column ||
+            fieldIndex(ColumnCache::COLUMN_MUXIC_LUFS) == column) {
+        // The muxic values are in the index, not in the track object. Keep
+        // them, so that a change of the track does not clear the columns.
+        return getIndexValue(pTrack->getId(), column);
+    }
     return QVariant{};
+}
+
+QVariant BaseTrackCache::getIndexValue(TrackId trackId, int column) const {
+    const auto it = m_trackInfo.constFind(trackId);
+    if (it == m_trackInfo.constEnd()) {
+        return QVariant{};
+    }
+    return it.value().value(column, QVariant{});
 }
 
 QVariant BaseTrackCache::data(TrackId trackId, int column) const {
@@ -691,6 +711,9 @@ int BaseTrackCache::compareColumnValues(int sortColumn,
             sortColumn == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_TIMESPLAYED) ||
             sortColumn == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_RATING) ||
             sortColumn == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_COLOR) ||
+            sortColumn == fieldIndex(ColumnCache::COLUMN_MUXIC_ENERGY) ||
+            sortColumn == fieldIndex(ColumnCache::COLUMN_MUXIC_DANCEABILITY) ||
+            sortColumn == fieldIndex(ColumnCache::COLUMN_MUXIC_LUFS) ||
             sortColumn == fieldIndex(ColumnCache::COLUMN_PLAYLISTTRACKSTABLE_POSITION)) {
         // Sort as floats.
         double delta = val1.toDouble() - val2.toDouble();

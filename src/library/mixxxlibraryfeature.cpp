@@ -17,6 +17,7 @@
 #include "library/trackcollectionmanager.h"
 #include "library/treeitem.h"
 #include "moc_mixxxlibraryfeature.cpp"
+#include "muxic/librarycolumns.h"
 #include "sources/soundsourceproxy.h"
 #include "util/dnd.h"
 #include "widget/wlibrary.h"
@@ -76,6 +77,7 @@ MixxxLibraryFeature::MixxxLibraryFeature(Library* pLibrary,
             LIBRARYTABLE_COVERART_DIGEST,
             LIBRARYTABLE_COVERART_HASH,
             LIBRARYTABLE_WAVESUMMARYHEX};
+    columns.append(muxic::viewColumns());
     QStringList searchColumns = {
             LIBRARYTABLE_ARTIST,
             LIBRARYTABLE_ALBUM,
@@ -89,8 +91,12 @@ MixxxLibraryFeature::MixxxLibraryFeature(Library* pLibrary,
 
     QStringList qualifiedTableColumns;
     for (const auto& col : columns) {
-        qualifiedTableColumns.append(mixxx::trackschema::tableForColumn(col) +
-                QLatin1Char('.') + col);
+        QString expression = muxic::viewSelectExpression(col);
+        if (expression.isEmpty()) {
+            expression = mixxx::trackschema::tableForColumn(col) +
+                    QLatin1Char('.') + col;
+        }
+        qualifiedTableColumns.append(expression);
     }
 
     QSqlQuery query(m_pTrackCollection->database());
@@ -98,8 +104,10 @@ MixxxLibraryFeature::MixxxLibraryFeature(Library* pLibrary,
     QString queryString = QString(
             "CREATE TEMPORARY VIEW IF NOT EXISTS %1 AS "
             "SELECT %2 FROM library "
-            "INNER JOIN track_locations ON library.location = track_locations.id")
-                                  .arg(tableName, qualifiedTableColumns.join(","));
+            "INNER JOIN track_locations ON library.location = track_locations.id%3")
+                                  .arg(tableName,
+                                          qualifiedTableColumns.join(","),
+                                          muxic::viewJoinClause());
     query.prepare(queryString);
     if (!query.exec()) {
         LOG_FAILED_QUERY(query);
