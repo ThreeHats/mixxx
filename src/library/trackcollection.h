@@ -13,6 +13,7 @@
 #include "library/dao/playlistdao.h"
 #include "library/dao/trackdao.h"
 #include "library/trackset/crate/cratestorage.h"
+#include "muxic/relatedtracks/trackrelationstorage.h"
 #include "preferences/usersettings.h"
 #include "util/thread_affinity.h"
 
@@ -51,6 +52,11 @@ class TrackCollection : public QObject,
     const CrateStorage& crates() const {
         DEBUG_ASSERT_QOBJECT_THREAD_AFFINITY(this);
         return m_crates;
+    }
+
+    muxic::TrackRelationStorage& trackRelations() {
+        DEBUG_ASSERT_QOBJECT_THREAD_AFFINITY(this);
+        return m_trackRelations;
     }
 
     TrackDAO& getTrackDAO() {
@@ -174,6 +180,7 @@ class TrackCollection : public QObject,
 
     PlaylistDAO m_playlistDao;
     CrateStorage m_crates;
+    muxic::TrackRelationStorage m_trackRelations;
     CueDAO m_cueDao;
     DirectoryDAO m_directoryDao;
     AnalysisDao m_analysisDao;

@@ -63,6 +63,7 @@ void TrackCollection::repairDatabase(const QSqlDatabase& database) {
 
     kLogger.info() << "Repairing database";
     m_crates.repairDatabase(database);
+    m_trackRelations.repairDatabase(database);
     m_directoryDao.repairDatabase(database);
 }
 
@@ -79,6 +80,7 @@ void TrackCollection::connectDatabase(const QSqlDatabase& database) {
     m_analysisDao.initialize(database);
     m_libraryHashDao.initialize(database);
     m_crates.connectDatabase(database);
+    m_trackRelations.connectDatabase(database);
 }
 
 void TrackCollection::disconnectDatabase() {
@@ -88,6 +90,7 @@ void TrackCollection::disconnectDatabase() {
     m_database = QSqlDatabase();
     m_trackDao.finish();
     m_crates.disconnectDatabase();
+    m_trackRelations.disconnectDatabase();
 }
 
 void TrackCollection::connectTrackSource(QSharedPointer<BaseTrackCache> pTrackSource) {
@@ -401,9 +404,14 @@ bool TrackCollection::purgeTracks(
     VERIFY_OR_DEBUG_ASSERT(m_crates.onPurgingTracks(trackIds)) {
         return false;
     }
+    VERIFY_OR_DEBUG_ASSERT(m_trackRelations.onPurgingTracks(trackIds)) {
+        return false;
+    }
     VERIFY_OR_DEBUG_ASSERT(transaction.commit()) {
         return false;
     }
+    m_trackRelations.afterPurgingTracks();
+
     // TODO(XXX): Move reversible actions inside transaction
     m_cueDao.deleteCuesForTracks(trackIds);
     m_playlistDao.removeTracksFromPlaylists(trackIds, true);

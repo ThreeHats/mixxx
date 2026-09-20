@@ -1511,6 +1511,7 @@ add_library(
   src/musicbrainz/web/coverartarchiveimagetask.cpp
   src/musicbrainz/web/coverartarchivelinkstask.cpp
   src/musicbrainz/web/musicbrainzrecordingstask.cpp
+  src/muxic/relatedtracks/trackrelationstorage.cpp
   src/nativeeventhandlerwin.cpp
   src/network/jsonwebtask.cpp
   src/network/networktask.cpp
@@ -2988,6 +2989,7 @@ if(BUILD_TESTING)
     src/test/trackmetadataexport_test.cpp
     src/test/tracknumberstest.cpp
     src/test/trackreftest.cpp
+    src/test/trackrelationstorage_test.cpp
     src/test/trackupdate_test.cpp
     src/test/uuid_test.cpp
     src/test/wbatterytest.cpp
