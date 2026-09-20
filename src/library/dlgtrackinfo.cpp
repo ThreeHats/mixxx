@@ -13,6 +13,8 @@
 #include "library/library_prefs.h"
 #include "library/trackmodel.h"
 #include "moc_dlgtrackinfo.cpp"
+#include "muxic/trackmeta.h"
+#include "muxic/trackmetadao.h"
 #include "preferences/colorpalettesettings.h"
 #include "sources/soundsourceproxy.h"
 #include "track/beatutils.h"
@@ -392,7 +394,46 @@ void DlgTrackInfo::updateFromTrack(const Track& track) {
 
     reloadTrackBeats(track);
 
+    updateMuxicFields(track.getId());
+
     m_pWStarRating->slotSetRating(m_pLoadedTrack->getRating());
+}
+
+void DlgTrackInfo::updateMuxicFields(TrackId trackId) {
+    muxic::TrackMetaDao* pDao = muxic::TrackMetaDao::instance();
+    muxic_groupBox->setEnabled(pDao != nullptr && trackId.isValid());
+    if (!pDao || !trackId.isValid()) {
+        clearMuxicFields();
+        return;
+    }
+    const muxic::TrackMeta meta = pDao->read(trackId);
+    spinMuxicEnergy->setValue(meta.energy.value_or(0));
+    txtMuxicTags->setText(meta.tags.join(QStringLiteral(", ")));
+    txtMuxicDanceability->setText(meta.danceability
+                    ? QString::number(*meta.danceability, 'f', 2)
+                    : QString());
+}
+
+void DlgTrackInfo::clearMuxicFields() {
+    spinMuxicEnergy->setValue(0);
+    txtMuxicTags->clear();
+    txtMuxicDanceability->clear();
+    txtMuxicLufs->clear();
+}
+
+void DlgTrackInfo::saveMuxicFields() {
+    muxic::TrackMetaDao* pDao = muxic::TrackMetaDao::instance();
+    if (!pDao || !m_pLoadedTrack) {
+        return;
+    }
+    const TrackId trackId = m_pLoadedTrack->getId();
+    if (!trackId.isValid()) {
+        return;
+    }
+    const int energy = spinMuxicEnergy->value();
+    pDao->setEnergy(trackId,
+            energy >= muxic::kEnergyMin ? std::optional<int>(energy) : std::nullopt);
+    pDao->setTags(trackId, muxic::parseTags(txtMuxicTags->text()));
 }
 
 void DlgTrackInfo::replaceTrackRecord(
@@ -459,6 +500,12 @@ void DlgTrackInfo::updateTrackMetadataFields() {
     txtReplayGain->setText(
             mixxx::ReplayGain::ratioToString(
                     trackInfo.getReplayGain().getRatio()));
+    const QVariant lufs = muxic::lufsFromReplayGainRatio(
+            QVariant(trackInfo.getReplayGain().getRatio()));
+    txtMuxicLufs->setText(lufs.isValid()
+                    ? QString::number(lufs.toDouble(), 'f', 1) +
+                            QStringLiteral(" LUFS")
+                    : QString());
 
     auto samplerate = signalInfo.getSampleRate();
     if (samplerate.isValid()) {
@@ -681,6 +728,8 @@ void DlgTrackInfo::saveTrack() {
     // both members must remain valid. Do not use std::move() for passing arguments!
     // Else triggering apply twice in quick succession might clear the metadata.
     m_pLoadedTrack->replaceRecord(m_trackRecord, m_pBeatsClone);
+
+    saveMuxicFields();
 }
 
 void DlgTrackInfo::clear() {
@@ -703,6 +752,8 @@ void DlgTrackInfo::clear() {
     updateSpinBpmFromBeats();
 
     txtLocation->setText("");
+
+    clearMuxicFields();
 
     m_pWStarRating->slotSetRating(0);
 }

@@ -116,6 +116,9 @@ class DlgTrackInfo : public QDialog, public Ui::DlgTrackInfo {
     }
 
     void updateTrackMetadataFields();
+    void updateMuxicFields(TrackId trackId);
+    void clearMuxicFields();
+    void saveMuxicFields();
     void updateSpinBpmFromBeats();
     void updateBpmEditControls();
     void updateBpmScaleButtonLabels();
