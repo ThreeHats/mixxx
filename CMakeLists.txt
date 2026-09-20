@@ -5291,13 +5291,18 @@ if(OSC)
       src/osc/oscbeatcontrol.cpp
       src/osc/oscbeatfeed.cpp
       src/osc/oscconfig.cpp
+      src/osc/osccontroller.cpp
       src/osc/oscmessage.cpp
       src/osc/oscpolicy.cpp
+      src/osc/oscservice.cpp
   )
   target_compile_definitions(mixxx-lib PUBLIC __OSC__)
   target_link_libraries(mixxx-lib PRIVATE lo::lo)
   if(BUILD_TESTING)
-    target_sources(mixxx-test PRIVATE src/test/oscbeatcontrol_test.cpp)
+    target_sources(
+      mixxx-test
+      PRIVATE src/test/osc_test.cpp src/test/oscbeatcontrol_test.cpp
+    )
     target_link_libraries(mixxx-test PRIVATE lo::lo)
   endif()
 endif()

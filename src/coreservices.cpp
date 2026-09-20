@@ -31,6 +31,9 @@
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "moc_coreservices.cpp"
+#ifdef __OSC__
+#include "osc/osccontroller.h"
+#endif
 #include "preferences/dialog/dlgpreferences.h"
 #include "preferences/settingsmanager.h"
 #ifdef __MODPLUG__
@@ -592,6 +595,11 @@ void CoreServices::initialize(QApplication* pApp) {
 
     m_pEffectsManager->setup();
 
+#ifdef __OSC__
+    m_pOscController = std::make_unique<mixxx::osc::Controller>(
+            pConfig, m_pPlayerManager.get());
+#endif
+
 #ifdef __VINYLCONTROL__
     m_pVCManager->init();
 #endif
@@ -937,6 +945,13 @@ void CoreServices::finalize() {
 
     qDebug() << t.elapsed(false).debugMillisWithUnit() << "saving configuration";
     m_pSettingsManager->save();
+
+#ifdef __OSC__
+    // The OSC controller watches the decks and the controls of the engine,
+    // thus it stops before them.
+    qDebug() << t.elapsed(false).debugMillisWithUnit() << "deleting OSC service";
+    m_pOscController.reset();
+#endif
 
     // SoundManager depend on Engine and Config
     qDebug() << t.elapsed(false).debugMillisWithUnit() << "deleting SoundManager";

@@ -25,6 +25,11 @@ class ControlPushButton;
 struct LibraryScanResultSummary;
 
 namespace mixxx {
+#ifdef __OSC__
+namespace osc {
+class Controller;
+} // namespace osc
+#endif
 
 class ControlIndicatorTimer;
 class DbConnectionPool;
@@ -147,6 +152,9 @@ class CoreServices : public QObject {
 
     std::unique_ptr<SkinControls> m_pSkinControls;
     std::unique_ptr<ControlPushButton> m_pTouchShift;
+#ifdef __OSC__
+    std::unique_ptr<mixxx::osc::Controller> m_pOscController;
+#endif
 
     Timer m_runtime_timer;
     const CmdlineArgs& m_cmdlineArgs;
