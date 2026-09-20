@@ -20,7 +20,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends clang-format python3 \
+    && apt-get install -y --no-install-recommends clang-format ffmpeg python3 \
     && rm -rf /var/lib/apt/lists/*
 
 # Ubuntu 22.04 has hidapi 0.11 and Mixxx needs 0.14. The static library
