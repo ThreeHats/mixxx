@@ -2865,6 +2865,7 @@ if(STEM)
       src/sources/soundsourcestem.cpp
       src/stems/stemconversionjob.cpp
       src/stems/stemconversionsettings.cpp
+      src/stems/stemtrackcopy.cpp
       src/track/steminfoimporter.cpp
       src/track/steminfo.cpp
       src/widget/wtrackstemmenu.cpp
