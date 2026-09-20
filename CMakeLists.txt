@@ -2862,6 +2862,8 @@ if(STEM)
   target_sources(
     mixxx-lib
     PRIVATE
+      src/preferences/dialog/dlgprefstems.cpp
+      src/preferences/dialog/dlgprefstemsdlg.ui
       src/sources/soundsourcestem.cpp
       src/stems/dlgstemconversion.cpp
       src/stems/dlgstemconversion.ui
