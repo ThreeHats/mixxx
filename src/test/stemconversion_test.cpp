@@ -63,8 +63,74 @@ bool writeSineWav(const QString& filePath, int sampleRate, int frameCount) {
     return true;
 }
 
+/// Write a stereo WAV that is silent except for a short click.
+bool writeClickWav(const QString& filePath,
+        int sampleRate,
+        int frameCount,
+        int clickFrame) {
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    const quint32 dataSize = static_cast<quint32>(frameCount) * 4;
+    const auto writeU32 = [&file](quint32 value) {
+        char bytes[4] = {static_cast<char>(value & 0xFF),
+                static_cast<char>((value >> 8) & 0xFF),
+                static_cast<char>((value >> 16) & 0xFF),
+                static_cast<char>((value >> 24) & 0xFF)};
+        file.write(bytes, 4);
+    };
+    const auto writeU16 = [&file](quint16 value) {
+        char bytes[2] = {static_cast<char>(value & 0xFF),
+                static_cast<char>((value >> 8) & 0xFF)};
+        file.write(bytes, 2);
+    };
+    file.write("RIFF", 4);
+    writeU32(36 + dataSize);
+    file.write("WAVEfmt ", 8);
+    writeU32(16);
+    writeU16(1);
+    writeU16(2);
+    writeU32(static_cast<quint32>(sampleRate));
+    writeU32(static_cast<quint32>(sampleRate) * 4);
+    writeU16(4);
+    writeU16(16);
+    file.write("data", 4);
+    writeU32(dataSize);
+    for (int frame = 0; frame < frameCount; ++frame) {
+        const bool inClick = frame >= clickFrame && frame < clickFrame + 4;
+        const auto sample = static_cast<qint16>(inClick ? 30000 : 0);
+        writeU16(static_cast<quint16>(sample));
+        writeU16(static_cast<quint16>(sample));
+    }
+    file.close();
+    return true;
+}
+
 QString muxerPathOrEmpty() {
     return QStandardPaths::findExecutable(QStringLiteral("MP4Box"));
+}
+
+QString encoderPathOrEmpty() {
+    return QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+}
+
+/// The first frame of a stereo buffer that reaches half of its peak. The
+/// threshold follows the peak, thus a lossy codec does not move the result.
+int findOnsetFrame(const mixxx::SampleBuffer& buffer) {
+    CSAMPLE peak = 0;
+    for (SINT sample = 0; sample < buffer.size(); sample += 2) {
+        peak = std::max(peak, std::abs(buffer[sample]));
+    }
+    if (peak <= 0.01f) {
+        return -1;
+    }
+    for (SINT sample = 0; sample < buffer.size(); sample += 2) {
+        if (std::abs(buffer[sample]) >= peak * 0.5f) {
+            return static_cast<int>(sample / 2);
+        }
+    }
+    return -1;
 }
 
 class StemConversionTest : public MixxxTest {
@@ -74,6 +140,12 @@ class StemConversionTest : public MixxxTest {
                 getTestDir().filePath(QStringLiteral("stems/fake_separator.sh"));
         return QStringLiteral("/bin/sh \"%1\" %2 $MODEL $OUTPUT_DIR \"$INPUT\"")
                 .arg(scriptPath, mode);
+    }
+
+    /// A separator command that copies the four files of a directory.
+    QString copyingSeparatorCommand(const QString& stemDirPath) const {
+        return QStringLiteral("%1 \"%2\"")
+                .arg(fakeSeparatorCommand(QStringLiteral("from")), stemDirPath);
     }
 
     mixxx::StemConversionSettings makeSettings(const QString& mode,
@@ -403,4 +475,96 @@ TEST_F(StemConversionTest, JobWritesAStemFileThatMixxxOpens) {
             pAudioSource->getSignalInfo().getChannelCount());
     EXPECT_EQ(kTestSampleRate, pAudioSource->getSignalInfo().getSampleRate());
 }
+
+TEST_F(StemConversionTest, JobEncodesWithTheDefaultTemplateAndKeepsTheFrames) {
+    if (muxerPathOrEmpty().isEmpty() || encoderPathOrEmpty().isEmpty()) {
+        GTEST_SKIP() << "MP4Box or ffmpeg is not installed";
+    }
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+
+    // The rig runs at 48 kHz and htdemucs writes 44100 Hz. The click is at
+    // the same second in the source and in the stems.
+    constexpr int kSourceRate = 48000;
+    constexpr int kSeparatorRate = 44100;
+    constexpr int kSourceClickFrame = kSourceRate;
+    const QString sourceFilePath = dir.filePath(QStringLiteral("clicktrack.wav"));
+    ASSERT_TRUE(writeClickWav(
+            sourceFilePath, kSourceRate, kSourceRate * 2, kSourceClickFrame));
+    TrackPointer pSource = Track::newTemporary(sourceFilePath);
+    pSource->setAudioProperties(mixxx::audio::ChannelCount(2),
+            mixxx::audio::SampleRate(kSourceRate),
+            mixxx::audio::Bitrate(),
+            mixxx::Duration::fromSeconds(2));
+
+    const QDir stemDir(dir.filePath(QStringLiteral("stems")));
+    ASSERT_TRUE(QDir().mkpath(stemDir.absolutePath()));
+    for (const QString& name : {QStringLiteral("drums"),
+                 QStringLiteral("bass"),
+                 QStringLiteral("other"),
+                 QStringLiteral("vocals")}) {
+        ASSERT_TRUE(writeClickWav(
+                stemDir.absoluteFilePath(name + QStringLiteral(".wav")),
+                kSeparatorRate,
+                kSeparatorRate * 2,
+                kSeparatorRate));
+    }
+
+    mixxx::StemConversionSettings settings = makeSettings(
+            QStringLiteral("from"), dir.path());
+    settings.setSeparatorCommand(copyingSeparatorCommand(stemDir.absolutePath()));
+    settings.setEncoderCommand(
+            mixxx::StemConversionSettings::defaultEncoderCommand());
+
+    mixxx::StemConversionJob job(settings, pSource);
+    QSignalSpy spy(&job, &mixxx::StemConversionJob::finished);
+    job.start();
+    ASSERT_TRUE(spy.count() == 1 || spy.wait(120000));
+    ASSERT_EQ(mixxx::StemConversionJob::State::Succeeded, job.state())
+            << job.errorMessage().toStdString();
+
+    const QString stemFilePath = dir.filePath(QStringLiteral("clicktrack.stem.mp4"));
+    ASSERT_TRUE(QFile::exists(stemFilePath));
+    ASSERT_EQ(4, mixxx::StemInfoImporter::importStemInfos(stemFilePath).size());
+
+    ASSERT_TRUE(SoundSourceProxy::isFileTypeSupported(QStringLiteral("stem.mp4")) ||
+            SoundSourceProxy::registerProviders());
+    TrackPointer pStemTrack(Track::newTemporary(stemFilePath));
+    mixxx::AudioSource::OpenParams stemParams;
+    stemParams.setChannelCount(mixxx::audio::ChannelCount::stem());
+    const auto pStemSource = SoundSourceProxy(pStemTrack).openAudioSource(stemParams);
+    ASSERT_NE(nullptr, pStemSource);
+    EXPECT_EQ(mixxx::audio::ChannelCount::stem(),
+            pStemSource->getSignalInfo().getChannelCount());
+    // The encode command resamples to the rate of the source track.
+    EXPECT_EQ(kSourceRate, pStemSource->getSignalInfo().getSampleRate());
+
+    // Read the mix of the four stems and find the click.
+    TrackPointer pMixTrack(Track::newTemporary(stemFilePath));
+    mixxx::AudioSource::OpenParams mixParams;
+    mixParams.setChannelCount(mixxx::audio::ChannelCount::stereo());
+    const auto pMixSource = SoundSourceProxy(pMixTrack).openAudioSource(mixParams);
+    ASSERT_NE(nullptr, pMixSource);
+
+    constexpr SINT kReadFrames = 4000;
+    constexpr SINT kReadStart = kSourceClickFrame - 2000;
+    mixxx::SampleBuffer buffer(kReadFrames * 2);
+    const auto readFrames = pMixSource->readSampleFrames(
+            mixxx::WritableSampleFrames(
+                    mixxx::IndexRange::forward(kReadStart, kReadFrames),
+                    mixxx::SampleBuffer::WritableSlice(
+                            buffer.data(), buffer.size())));
+    ASSERT_EQ(kReadFrames * 2, readFrames.readableLength());
+
+    const int clickFrame = findOnsetFrame(buffer);
+    ASSERT_GE(clickFrame, 0) << "no click found in the stem file";
+    const int offsetFrames =
+            static_cast<int>(kReadStart) + clickFrame - kSourceClickFrame;
+    // The encoder delay must not move the audio, otherwise every cue lands
+    // late. ffmpeg writes an edit list and the reader of Mixxx honors it.
+    // A missing edit list would give one AAC frame, 1024 samples or more.
+    EXPECT_EQ(0, offsetFrames) << "the stem audio starts " << offsetFrames
+                               << " frames off the source";
+}
+
 #endif // Q_OS_WIN

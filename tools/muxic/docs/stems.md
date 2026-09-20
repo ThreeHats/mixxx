@@ -115,6 +115,21 @@ positions. A second stays a second. If the two rates differ, the job writes a
 message in the conversion window that names both rates. Frame rounding can
 move a position by less than one sample.
 
+## The encoder delay
+
+An AAC encoder puts priming samples, 1024 or more, at the head of the stream.
+If the reader plays them, every cue lands late by that count. The test
+`JobEncodesWithTheDefaultTemplateAndKeepsTheFrames` measures it: a click at
+frame 48000 of a 48 kHz source, four separated files at 44100 Hz, the default
+encode command, then the stem reader of Mixxx. **The click comes back at
+frame 48000. The offset is 0 frames.**
+
+The reason: ffmpeg writes an edit list (`elst`) that trims the priming
+samples, MP4Box keeps that edit list through the mux, and libavformat gives
+the trim to the decoder. AAC thus stays the default. You need no ALAC for the
+alignment. ALAC (`-c:a alac`) is still a good option for a lossless stem
+file, and a stem player accepts it, but the file is about four times larger.
+
 ## The conversion window
 
 **Stems > Show Conversions...** opens the window. It lists each job with the
@@ -165,5 +180,6 @@ with the same tags.
 - The ReplayGain of the source is copied as is. Mixxx mixes the four stems on
   the fly and applies no DSP, thus the loudness of the mix can differ a little
   from the loudness of the source master.
-- No test with a real model, because the build image has no `demucs` and no
-  `ffmpeg` program. The test uses a shell script and MP4Box.
+- No test with a real model, because the build image has no `demucs`. The
+  test uses a shell script for the separation step, and the real `ffmpeg` and
+  `MP4Box` for the rest.
