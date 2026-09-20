@@ -31,6 +31,12 @@ class WFindOnWebMenu;
 class WSearchRelatedTracksMenu;
 class WStarRatingAction;
 
+#ifdef __STEM__
+namespace mixxx {
+class DlgStemConversion;
+} // namespace mixxx
+#endif
+
 /// A context menu for track(s).
 /// Can be used with individual track type widgets based on TrackPointer
 /// or list/table type track widgets based on QModelIndexList and TrackModel.
@@ -59,11 +65,12 @@ class WTrackMenu : public QMenu {
         SelectInLibrary = 1 << 15,
         Analyze = 1 << 16,
         FindOnWeb = 1 << 17,
+        Stems = 1 << 18,
         TrackModelFeatures = Remove | HideUnhidePurge,
         All = AutoDJ | LoadTo | Playlist | Crate | Remove | Metadata | Reset | Analyze |
                 BPM | Color | HideUnhidePurge | RemoveFromDisk | FileBrowser |
                 Properties | SearchRelated | UpdateReplayGainFromPregain | SelectInLibrary |
-                FindOnWeb
+                FindOnWeb | Stems
     };
     Q_DECLARE_FLAGS(Features, Feature)
 
@@ -156,6 +163,12 @@ class WTrackMenu : public QMenu {
     void slotClearReplayGain();
     void slotClearWaveform();
     void slotClearAllMetadata();
+
+#ifdef __STEM__
+    // Stem conversion
+    void slotConvertToStems();
+    void slotShowStemConversions();
+#endif
 
     // Analysis
     void slotAnalyze();
@@ -355,6 +368,14 @@ class WTrackMenu : public QMenu {
     // Track rating and color
     parented_ptr<WStarRatingAction> m_pStarRatingAction;
     parented_ptr<WColorPickerAction> m_pColorPickerAction;
+
+#ifdef __STEM__
+    // Stem conversion
+    parented_ptr<QMenu> m_pStemsMenu;
+    parented_ptr<QAction> m_pConvertToStemsAction;
+    parented_ptr<QAction> m_pShowStemConversionsAction;
+    std::unique_ptr<mixxx::DlgStemConversion> m_pDlgStemConversion;
+#endif
 
     // Analysis actions
     parented_ptr<QAction> m_pAnalyzeAction;

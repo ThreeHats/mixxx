@@ -2863,6 +2863,8 @@ if(STEM)
     mixxx-lib
     PRIVATE
       src/sources/soundsourcestem.cpp
+      src/stems/dlgstemconversion.cpp
+      src/stems/dlgstemconversion.ui
       src/stems/stemconversionjob.cpp
       src/stems/stemconversionmanager.cpp
       src/stems/stemconversionsettings.cpp
