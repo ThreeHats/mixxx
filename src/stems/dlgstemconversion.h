@@ -8,7 +8,7 @@
 
 namespace mixxx {
 
-/// The window that lists the stem conversions that wait, run or are done.
+/// The window that lists each stem conversion with its state.
 class DlgStemConversion : public QDialog, public Ui::DlgStemConversion {
     Q_OBJECT
 
