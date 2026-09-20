@@ -4,12 +4,14 @@
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
 #include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <cmath>
 
 #include "moc_stemconversionjob.cpp"
+#include "sources/metadatasourcetaglib.h"
 #include "track/steminfoimporter.h"
 #include "track/track.h"
 #include "util/assert.h"
@@ -41,6 +43,9 @@ const QStringList kStemKeywords[] = {
 
 constexpr int kStandardErrorTailChars = 4000;
 constexpr mixxx::audio::SampleRate::value_t kFallbackSampleRate = 44100;
+
+// The file type that gives TagLib the MP4 reader for a stem file.
+const QString kStemFileType = QStringLiteral("stem.mp4");
 
 const QString kSeparatorLabel = QStringLiteral("SeparatorCommand");
 const QString kEncoderLabel = QStringLiteral("EncoderCommand");
@@ -325,18 +330,50 @@ void StemConversionJob::runTag() {
     manifestFile.write(stemManifestJson().toUtf8());
     manifestFile.close();
 
-    const QStringList command = {
-            m_settings.muxerPath(),
-            QStringLiteral("-quiet"),
-            QStringLiteral("-udta"),
-            QStringLiteral("0:type=stem:src=%1").arg(manifestPath),
-            m_outputFilePath,
-    };
+    QStringList command = {m_settings.muxerPath(), QStringLiteral("-quiet")};
+    const QString coverImagePath = writeSourceCoverImage();
+    if (!coverImagePath.isEmpty()) {
+        command.append(QStringLiteral("-itags"));
+        command.append(QStringLiteral("cover=%1").arg(coverImagePath));
+    }
+    command.append(QStringLiteral("-udta"));
+    command.append(QStringLiteral("0:type=stem:src=%1").arg(manifestPath));
+    command.append(m_outputFilePath);
     setProgress(0.95);
     startProcess(command, State::Tagging);
 }
 
+QString StemConversionJob::writeSourceCoverImage() {
+    const QString sourceFileType = m_pSourceTrack->getFileInfo().suffix();
+    if (sourceFileType.isEmpty()) {
+        return QString();
+    }
+    QImage coverImage;
+    MetadataSourceTagLib(m_sourceFilePath, sourceFileType)
+            .importTrackMetadataAndCoverImage(nullptr, &coverImage, false);
+    if (coverImage.isNull()) {
+        return QString();
+    }
+    const QString coverImagePath =
+            QDir(m_pWorkDir->path()).absoluteFilePath(QStringLiteral("cover.jpg"));
+    // The muxer splits its tag list at a colon, thus such a path cannot pass.
+    if (coverImagePath.contains(QChar(':')) ||
+            !coverImage.save(coverImagePath, "JPEG", 90)) {
+        return QString();
+    }
+    return coverImagePath;
+}
+
+void StemConversionJob::exportSourceTags() {
+    const auto result = MetadataSourceTagLib(m_outputFilePath, kStemFileType)
+                                .exportTrackMetadata(m_pSourceTrack->getMetadata());
+    if (result.first != MetadataSource::ExportResult::Succeeded) {
+        kLogger.warning() << "Failed to write the tags into" << m_outputFilePath;
+    }
+}
+
 void StemConversionJob::complete() {
+    exportSourceTags();
     if (!StemInfoImporter::hasStemAtom(m_outputFilePath)) {
         fail(tr("The file \"%1\" has no stem manifest. The muxer did not "
                 "write it.")

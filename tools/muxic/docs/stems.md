@@ -12,11 +12,14 @@ gets the cues, the grid and the tags of the source track.
    - runs the separation command, which writes four audio files,
    - runs the encode command one time per audio stream,
    - runs MP4Box two times: one time to mux the five streams, one time to
-     write the stem manifest in the `moov/udta/stem` atom.
-4. The new file goes to the library through the normal track API.
+     write the stem manifest in the `moov/udta/stem` atom and the cover
+     image of the source file,
+   - writes the tags of the source track into the stem file with TagLib.
+4. The new file goes to the library through the normal track API. Mixxx
+   reads the tags of the new file at that moment.
 5. The new track gets the cues, the loops, the grid, the key, the BPM lock,
-   the rating, the color, the comment, the ReplayGain and the tags of the
-   source track.
+   the rating, the color, the comment and the ReplayGain of the source
+   track.
 
 The stem file holds five stereo streams: the source mix, then Drums, Bass,
 Other and Vocals. This order and this count are what the stem reader of Mixxx
@@ -160,6 +163,26 @@ The `moov/udta/stem` atom holds this JSON:
 The colors are the colors that Mixxx gives to a stem file with no colors,
 thus a converted file looks like the rest of the library.
 
+## The tags and the cover image
+
+The stem file carries its own tags, thus beets, the organizer and a
+re-import of the library read the artist and the title with no help from the
+Mixxx database.
+
+- MP4Box writes the cover image of the source file into `moov/udta/meta/ilst`
+  in the same call as the stem manifest. A source with no image gets no
+  image.
+- TagLib writes the tag fields of the source track (title, artist, album,
+  album artist, composer, grouping, genre, year, track number, comment, BPM,
+  key, ReplayGain) through the normal Mixxx tag writer,
+  `MetadataSourceTagLib`, which is the same code that the **Export metadata
+  into file tags** action uses.
+
+TagLib keeps the `stem` atom and the cover image when it writes the tags. The
+test `JobWritesTheTagsAndKeepsTheStemManifest` proves both: after the tag
+write, `StemInfoImporter` still reads four stems and the cover image reads
+back.
+
 ## How the muxic rig sees it
 
 The fork adds no table and no column. The new stem file is a normal row in
@@ -175,8 +198,9 @@ with the same tags.
   output of the separation program. A program that prints no percentage jumps
   from 5 % to 70 %.
 - No delete of the source track. The library holds both tracks.
-- No cover art in the stem file. The library row keeps the cover of the
-  source track only if Mixxx finds a cover file next to it.
+- A cover image that lives in a file next to the track, and not in the tags,
+  does not go into the stem file. MP4Box gets only the image that TagLib
+  reads out of the source file.
 - The ReplayGain of the source is copied as is. Mixxx mixes the four stems on
   the fly and applies no DSP, thus the loudness of the mix can differ a little
   from the loudness of the source master.

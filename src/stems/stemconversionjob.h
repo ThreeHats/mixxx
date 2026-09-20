@@ -79,6 +79,11 @@ class StemConversionJob : public QObject {
     void runTag();
     void complete();
 
+    /// Write the cover image of the source file in the work directory.
+    /// Returns an empty path when the source carries no image.
+    QString writeSourceCoverImage();
+    void exportSourceTags();
+
     void startProcess(const QStringList& command, State state);
     void onProcessFinished(int exitCode);
     void onStandardErrorReady();

@@ -7,6 +7,7 @@
 #include <QTemporaryDir>
 #include <cmath>
 
+#include "sources/metadatasourcetaglib.h"
 #include "sources/soundsourceproxy.h"
 #include "stems/stemconversionjob.h"
 #include "stems/stemconversionsettings.h"
@@ -567,4 +568,70 @@ TEST_F(StemConversionTest, JobEncodesWithTheDefaultTemplateAndKeepsTheFrames) {
                                << " frames off the source";
 }
 
+TEST_F(StemConversionTest, JobWritesTheTagsAndKeepsTheStemManifest) {
+    if (muxerPathOrEmpty().isEmpty()) {
+        GTEST_SKIP() << "MP4Box is not installed";
+    }
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+
+    // This file carries an embedded cover image.
+    const QString sourceFilePath = getTestFile(QStringLiteral("-jpg.mp3"));
+    ASSERT_TRUE(QFile::exists(sourceFilePath));
+    TrackPointer pSource = Track::newTemporary(sourceFilePath);
+    pSource->setAudioProperties(mixxx::audio::ChannelCount(2),
+            mixxx::audio::SampleRate(kTestSampleRate),
+            mixxx::audio::Bitrate(),
+            mixxx::Duration::fromSeconds(1));
+    pSource->setTitle(QStringLiteral("Stem Title"));
+    pSource->setArtist(QStringLiteral("Stem Artist"));
+    pSource->setAlbum(QStringLiteral("Stem Album"));
+
+    const QDir stemDir(dir.filePath(QStringLiteral("stems")));
+    ASSERT_TRUE(QDir().mkpath(stemDir.absolutePath()));
+    for (const QString& name : {QStringLiteral("drums"),
+                 QStringLiteral("bass"),
+                 QStringLiteral("other"),
+                 QStringLiteral("vocals")}) {
+        ASSERT_TRUE(writeSineWav(
+                stemDir.absoluteFilePath(name + QStringLiteral(".wav")),
+                kTestSampleRate,
+                kTestFrameCount));
+    }
+
+    mixxx::StemConversionSettings settings = makeSettings(
+            QStringLiteral("from"), dir.path());
+    settings.setSeparatorCommand(copyingSeparatorCommand(stemDir.absolutePath()));
+
+    mixxx::StemConversionJob job(settings, pSource);
+    QSignalSpy spy(&job, &mixxx::StemConversionJob::finished);
+    job.start();
+    ASSERT_TRUE(spy.count() == 1 || spy.wait(120000));
+    ASSERT_EQ(mixxx::StemConversionJob::State::Succeeded, job.state())
+            << job.errorMessage().toStdString();
+
+    const QString stemFilePath = job.outputFilePath();
+    ASSERT_TRUE(QFile::exists(stemFilePath));
+
+    // The tag writer must keep the stem manifest of the muxer.
+    const QList<StemInfo> stemInfos =
+            mixxx::StemInfoImporter::importStemInfos(stemFilePath);
+    ASSERT_EQ(4, stemInfos.size());
+    EXPECT_QSTRING_EQ(QStringLiteral("Drums"), stemInfos.at(0).getLabel());
+
+    mixxx::TrackMetadata metadata;
+    QImage coverImage;
+    const auto result = mixxx::MetadataSourceTagLib(
+            stemFilePath, QStringLiteral("stem.mp4"))
+                                .importTrackMetadataAndCoverImage(
+                                        &metadata, &coverImage, false);
+    ASSERT_EQ(mixxx::MetadataSource::ImportResult::Succeeded, result.first);
+    EXPECT_QSTRING_EQ(QStringLiteral("Stem Title"),
+            metadata.getTrackInfo().getTitle());
+    EXPECT_QSTRING_EQ(QStringLiteral("Stem Artist"),
+            metadata.getTrackInfo().getArtist());
+    EXPECT_QSTRING_EQ(QStringLiteral("Stem Album"),
+            metadata.getAlbumInfo().getTitle());
+    EXPECT_FALSE(coverImage.isNull()) << "the cover image is missing";
+}
 #endif // Q_OS_WIN
