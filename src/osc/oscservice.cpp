@@ -146,7 +146,8 @@ void Service::buildPublishEntries(const Config& config, int deckCount) {
         pEntry->key = key;
         pEntry->path = path;
         pEntry->limiter = RateLimiter(rule.minIntervalMs);
-        pEntry->pProxy = std::make_unique<ControlProxy>(key);
+        pEntry->pProxy = std::make_unique<ControlProxy>(
+                key, nullptr, ControlFlag::NoWarnIfMissing);
         if (!pEntry->pProxy->valid()) {
             kLogger.debug() << "no such control:" << rule.group << rule.key;
             continue;
@@ -172,23 +173,25 @@ void Service::sendControl(const PublishEntry& entry, double value) {
     sendControlTo(allTargets(), entry, value);
 }
 
-void Service::sendControlTo(const QList<Target>& targets,
+int Service::sendControlTo(const QList<Target>& targets,
         const PublishEntry& entry,
         double value) {
     if (targets.isEmpty()) {
-        return;
+        return 0;
     }
     Message message;
     message.addFloat(static_cast<float>(value));
     send(targets, entry.path, message);
 
-    if (entry.key.item == kKeyControl) {
-        // The number of a key says nothing to a reader that shows text, thus
-        // the module also sends the name in the notation of the user.
-        Message text;
-        text.addString(KeyUtils::keyToString(KeyUtils::keyFromNumericValue(value)));
-        send(targets, pathForGroupMessage(entry.key.group, kKeyTextName), text);
+    if (entry.key.item != kKeyControl) {
+        return 1;
     }
+    // The number of a key says nothing to a reader that shows text, thus the
+    // module also sends the name in the notation of the user.
+    Message text;
+    text.addString(KeyUtils::keyToString(KeyUtils::keyFromNumericValue(value)));
+    send(targets, pathForGroupMessage(entry.key.group, kKeyTextName), text);
+    return 2;
 }
 
 void Service::setTrackInfo(const QString& group, const TrackInfo& info) {
@@ -198,17 +201,20 @@ void Service::setTrackInfo(const QString& group, const TrackInfo& info) {
     }
 }
 
-void Service::sendTrackInfoTo(const QList<Target>& targets,
+int Service::sendTrackInfoTo(const QList<Target>& targets,
         const QString& group,
         const TrackInfo& info) {
     if (targets.isEmpty()) {
-        return;
+        return 0;
     }
+    int count = 0;
     for (const MetadataField& field : kMetadataFields) {
         Message message;
         message.addString(info.*(field.member));
         send(targets, pathForGroupMessage(group, QString::fromLatin1(field.name)), message);
+        count++;
     }
+    return count;
 }
 
 void Service::sendSnapshotTo(const QList<Target>& targets) {
@@ -217,12 +223,10 @@ void Service::sendSnapshotTo(const QList<Target>& targets) {
     }
     int count = 0;
     for (const auto& pEntry : m_publishEntries) {
-        sendControlTo(targets, *pEntry, pEntry->pProxy->get());
-        count++;
+        count += sendControlTo(targets, *pEntry, pEntry->pProxy->get());
     }
     for (auto it = m_trackInfo.constBegin(); it != m_trackInfo.constEnd(); ++it) {
-        sendTrackInfoTo(targets, it.key(), it.value());
-        count++;
+        count += sendTrackInfoTo(targets, it.key(), it.value());
     }
     Message message;
     message.addInt32(count);
@@ -351,7 +355,8 @@ void Service::handleControlWrite(const IncomingMessage& message) {
     }
     ControlProxy* pProxy = m_writeProxies.value(key, nullptr);
     if (pProxy == nullptr) {
-        auto pOwned = std::make_unique<ControlProxy>(key);
+        auto pOwned = std::make_unique<ControlProxy>(
+                key, nullptr, ControlFlag::NoWarnIfMissing);
         if (!pOwned->valid()) {
             kLogger.warning() << "no such control:" << message.path;
             return;

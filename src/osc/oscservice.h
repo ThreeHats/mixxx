@@ -74,10 +74,11 @@ class Service : public QObject {
     void buildPublishEntries(const Config& config, int deckCount);
     void onControlChanged(PublishEntry* pEntry, double value);
     void sendControl(const PublishEntry& entry, double value);
-    void sendControlTo(const QList<Target>& targets,
+    /// Returns the messages that went out.
+    int sendControlTo(const QList<Target>& targets,
             const PublishEntry& entry,
             double value);
-    void sendTrackInfoTo(const QList<Target>& targets,
+    int sendTrackInfoTo(const QList<Target>& targets,
             const QString& group,
             const TrackInfo& info);
     void sendSnapshotTo(const QList<Target>& targets);
