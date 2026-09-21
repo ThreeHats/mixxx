@@ -236,8 +236,10 @@ above.
 ## The waveform
 
 The scrolling waveform draws a downbeat line with the beat colour of the
-skin at full alpha, and a normal beat line with the same colour at 40 per
+skin at full alpha, and a normal beat line with the same colour at 60 per
 cent of that alpha. The bar line is thus stronger, and no skin file changes.
+A track with no bar phase keeps the alpha of the skin on every line, thus it
+looks as it did before.
 The overview does not draw bar lines.
 
 The fork covers the two renderers that a Mixxx build uses:
