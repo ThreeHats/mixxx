@@ -25,8 +25,10 @@ The stem file holds five stereo streams: the source mix, then Drums, Bass,
 Other and Vocals. This order and this count are what the stem reader of Mixxx
 wants. A different order or a different count makes the file unreadable.
 
-The conversion runs in QProcess, thus the GUI thread and the engine thread
-stay free. Mixxx plays audio without a dropout while a model runs.
+Each external program runs in QProcess and each file step, which means the
+cover image, the tag write, the check of the manifest and the move into the
+music folder, runs in a worker thread. The GUI thread and the engine thread
+thus stay free, and Mixxx plays audio without a dropout while a model runs.
 
 ## What you install on the host
 
@@ -62,8 +64,10 @@ group `[Stems]`.
 The separation command knows `$INPUT`, `$OUTPUT_DIR` and `$MODEL`. The encode
 command knows `$INPUT`, `$OUTPUT` and `$SAMPLE_RATE`. Both forms `$NAME` and
 `${NAME}` work. A quote holds a value with a space together, thus
-`"$INPUT"` stays one argument. An unknown placeholder stops the job with a
-message that names it.
+`"$INPUT"` stays one argument. A name in any case matches, thus `$input`
+and `$Model` are errors and not plain text. A name that is not in the list
+above, and a name whose value is empty, stop the job with a message that
+names it.
 
 ### Command templates to paste
 
@@ -90,9 +94,12 @@ With `audio-separator`, set `Model` to a model file name, for example
 loads the UVR model files.
 
 The job reads the four files back by name. A file name must hold the word
-`drums`, `bass`, `other` and `vocals`. `audio-separator` writes names like
-`track_(Vocals)_model.wav`, which match. Two files for one stem stop the job.
-A two-stem run stops the job too, because it writes no drum file.
+`drums`, `bass`, `other` or `vocals`. The base name of the source drops out
+of each name first, and the text of the last parentheses wins, thus
+`Drum and Bass Anthem_(Bass)_htdemucs.wav` goes to Bass and not to Drums. A
+name that still holds the word of more than one stem is skipped. Two files
+for one stem stop the job. A two-stem run stops the job too, because it
+writes no drum file.
 
 Lossless output, with no recode and no resample:
 
@@ -133,19 +140,32 @@ the trim to the decoder. AAC thus stays the default. You need no ALAC for the
 alignment. ALAC (`-c:a alac`) is still a good option for a lossless stem
 file, and a stem player accepts it, but the file is about four times larger.
 
+## Where the job writes
+
+The muxer, the manifest and the tags all work on a file in a temporary work
+directory. The last step moves that file into the music folder: first to a
+hidden name that ends with `.part`, then a rename to the final name. A
+library scan, beets or the hub thus never see a half written stem file, and a
+stop of Mixxx in the middle leaves nothing but the work directory.
+
+The job removes only the files that it made: the work directory and its own
+`.part` file. It never removes the stem file of an earlier run. A conversion
+that finds its output file in place stops with a message.
+
 ## The conversion window
 
 **Stems > Show Conversions...** opens the window. It lists each job with the
 track, the state, the progress and the message. The states are Queued,
-Separating, Encoding, Muxing, Writing the stem manifest, Done, Failed and
-Cancelled. The buttons cancel the selected jobs, cancel all jobs, or drop the
-jobs that ended.
+Preparing, Separating, Reading the stem files, Encoding, Muxing, Writing the
+stem manifest, Writing the tags, Done, Failed and Cancelled. The buttons
+cancel the selected jobs, cancel all jobs, or drop the jobs that ended.
 
 The queue runs one job at a time, because a separation model fills the memory
 of the graphics card.
 
-A failed job keeps the last 4000 characters of the standard error of the
-program in its message, thus you see why the model or the muxer stopped.
+A failed job keeps the last 4000 characters of the output of the program in
+its message, thus you see why the model or the muxer stopped. Both output
+channels of the program go into that text.
 
 ## The stem manifest
 
@@ -197,6 +217,8 @@ with the same tags.
 - No progress from the muxer. The percentage during separation comes from the
   output of the separation program. A program that prints no percentage jumps
   from 5 % to 70 %.
+- Two conversions of one track at the same time are refused. The second one
+  fails with a message, because both would write one file.
 - No delete of the source track. The library holds both tracks.
 - A cover image that lives in a file next to the track, and not in the tags,
   does not go into the stem file. MP4Box gets only the image that TagLib
