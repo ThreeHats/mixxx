@@ -69,11 +69,11 @@ class BaseTrackTableModel : public QAbstractTableModel, public TrackModel {
 
     QVariant data(
             const QModelIndex& index,
-            int role = Qt::DisplayRole) const final;
+            int role = Qt::DisplayRole) const override;
     bool setData(
             const QModelIndex& index,
             const QVariant& value,
-            int role = Qt::EditRole) final;
+            int role = Qt::EditRole) override;
 
     // Calculate the number of columns from all valid
     // column headers.
@@ -94,7 +94,7 @@ class BaseTrackTableModel : public QAbstractTableModel, public TrackModel {
 
     QAbstractItemDelegate* delegateForColumn(
             const int column,
-            QObject* pParent) final;
+            QObject* pParent) override;
 
     int fieldIndex(
             const QString& fieldName) const override {

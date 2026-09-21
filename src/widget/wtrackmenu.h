@@ -27,6 +27,9 @@ class Library;
 class TrackModel;
 class WColorPickerAction;
 class WCoverArtMenu;
+namespace muxic {
+class RelatedTracksMenu;
+} // namespace muxic
 class WFindOnWebMenu;
 class WSearchRelatedTracksMenu;
 class WStarRatingAction;
@@ -60,11 +63,12 @@ class WTrackMenu : public QMenu {
         Analyze = 1 << 16,
         FindOnWeb = 1 << 17,
         Stems = 1 << 18,
+        RelatedTracks = 1 << 19,
         TrackModelFeatures = Remove | HideUnhidePurge,
         All = AutoDJ | LoadTo | Playlist | Crate | Remove | Metadata | Reset | Analyze |
                 BPM | Color | HideUnhidePurge | RemoveFromDisk | FileBrowser |
                 Properties | SearchRelated | UpdateReplayGainFromPregain | SelectInLibrary |
-                FindOnWeb | Stems
+                FindOnWeb | Stems | RelatedTracks
     };
     Q_DECLARE_FLAGS(Features, Feature)
 
@@ -85,6 +89,7 @@ class WTrackMenu : public QMenu {
             WTrackMenu::Feature::UpdateReplayGainFromPregain |
             WTrackMenu::Feature::FindOnWeb |
             WTrackMenu::Feature::Stems |
+            WTrackMenu::Feature::RelatedTracks |
             WTrackMenu::Feature::SelectInLibrary};
 
     WTrackMenu(QWidget* parent,
@@ -306,6 +311,7 @@ class WTrackMenu : public QMenu {
     parented_ptr<QMenu> m_pColorMenu;
     parented_ptr<WCoverArtMenu> m_pCoverMenu;
     parented_ptr<WSearchRelatedTracksMenu> m_pSearchRelatedMenu;
+    parented_ptr<muxic::RelatedTracksMenu> m_pRelatedTracksMenu;
     parented_ptr<QMenu> m_pFindOnWebMenu;
     parented_ptr<FindOnWebLast> m_pFindOnWebLastAct;
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)

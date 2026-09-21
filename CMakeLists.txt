@@ -1520,6 +1520,13 @@ add_library(
   src/muxic/trackmetadao.cpp
   src/muxic/trackmetafields.cpp
   src/muxic/trackmetapoller.cpp
+  src/muxic/relatedtracks/relatedtracksfeature.cpp
+  src/muxic/relatedtracks/relatedtracksmenu.cpp
+  src/muxic/relatedtracks/relatedtrackstablemodel.cpp
+  src/muxic/relatedtracks/relationratingdelegate.cpp
+  src/muxic/relatedtracks/relationsuggester.cpp
+  src/muxic/relatedtracks/relationtypedelegate.cpp
+  src/muxic/relatedtracks/trackrelationstorage.cpp
   src/nativeeventhandlerwin.cpp
   src/network/jsonwebtask.cpp
   src/network/networktask.cpp
@@ -2980,6 +2987,8 @@ if(BUILD_TESTING)
     src/test/queryutiltest.cpp
     src/test/rangelist_test.cpp
     src/test/readaheadmanager_test.cpp
+    src/test/relatedtracksmodel_test.cpp
+    src/test/relationsuggester_test.cpp
     src/test/replaygaintest.cpp
     src/test/rescalertest.cpp
     src/test/rgbcolor_test.cpp
@@ -3008,6 +3017,7 @@ if(BUILD_TESTING)
     src/test/trackmetadataexport_test.cpp
     src/test/tracknumberstest.cpp
     src/test/trackreftest.cpp
+    src/test/trackrelationstorage_test.cpp
     src/test/trackupdate_test.cpp
     src/test/uuid_test.cpp
     src/test/wbatterytest.cpp

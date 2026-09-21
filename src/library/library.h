@@ -35,6 +35,10 @@ class WLibrarySidebar;
 class WLibrary;
 class QAbstractItemModel;
 
+namespace muxic {
+class RelatedTracksFeature;
+} // namespace muxic
+
 #ifdef __ENGINEPRIME__
 namespace mixxx {
 class LibraryExporter;
@@ -174,6 +178,8 @@ class Library: public QObject {
     void enableCoverArtDisplay(bool);
     void selectTrack(const TrackId&);
     void trackSelected(TrackPointer pTrack);
+    /// Shows the Related Tracks view of the track.
+    void showRelatedTracks(TrackId trackId);
     void analyzeTracks(const QList<AnalyzerScheduledTrack>& tracks);
 #ifdef __ENGINEPRIME__
     void exportLibrary();
@@ -216,6 +222,7 @@ class Library: public QObject {
     parented_ptr<AutoDJFeature> m_pAutoDJFeature;
     parented_ptr<PlaylistFeature> m_pPlaylistFeature;
     parented_ptr<CrateFeature> m_pCrateFeature;
+    parented_ptr<muxic::RelatedTracksFeature> m_pRelatedTracksFeature;
     parented_ptr<BrowseFeature> m_pBrowseFeature;
     parented_ptr<AnalysisFeature> m_pAnalysisFeature;
     QFont m_trackTableFont;

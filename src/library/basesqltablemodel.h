@@ -100,6 +100,14 @@ class BaseSqlTableModel : public BaseTrackTableModel {
 
     virtual void initSortColumnMapping();
 
+    /// The ORDER BY expression of a column of the table, not of the track
+    /// source. The default sorts the column as text.
+    virtual QString tableColumnSortExpression(int column) const;
+
+    /// Writes a value of a column of the table into the cache of the row.
+    /// The view shows the new value without a new select.
+    bool setTableColumnValue(int row, int column, const QVariant& value);
+
     TrackCollectionManager* const m_pTrackCollectionManager;
 
     QList<TrackRef> getTrackRefs(const QModelIndexList& indices) const;

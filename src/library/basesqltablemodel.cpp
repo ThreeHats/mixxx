@@ -395,6 +395,25 @@ void BaseSqlTableModel::setTable(QString tableName,
     m_bInitialized = true;
 }
 
+QString BaseSqlTableModel::tableColumnSortExpression(int column) const {
+    const QString sortField =
+            QStringLiteral("%1.%2").arg(m_tableName, m_tableColumns[column]);
+    return mixxx::DbConnection::collateLexicographically(sortField);
+}
+
+bool BaseSqlTableModel::setTableColumnValue(int row, int column, const QVariant& value) {
+    VERIFY_OR_DEBUG_ASSERT(row >= 0 && row < m_rowInfo.size()) {
+        return false;
+    }
+    VERIFY_OR_DEBUG_ASSERT(column >= 0 && column < m_rowInfo[row].columnValues.size()) {
+        return false;
+    }
+    m_rowInfo[row].columnValues[column] = value;
+    const QModelIndex changedIndex = index(row, column);
+    emit dataChanged(changedIndex, changedIndex);
+    return true;
+}
+
 int BaseSqlTableModel::columnIndexFromSortColumnId(TrackModel::SortColumnId column) const {
     if (column == TrackModel::SortColumnId::Invalid) {
         return -1;
@@ -531,9 +550,7 @@ void BaseSqlTableModel::setSort(int column, Qt::SortOrder order) {
             m_tableOrderBy = "ORDER BY RANDOM()";
         } else {
             m_tableOrderBy = "ORDER BY ";
-            QString field = m_tableColumns[column];
-            QString sort_field = QString("%1.%2").arg(m_tableName, field);
-            m_tableOrderBy.append(mixxx::DbConnection::collateLexicographically(sort_field));
+            m_tableOrderBy.append(tableColumnSortExpression(column));
             m_tableOrderBy.append((order == Qt::AscendingOrder) ? " ASC" : " DESC");
         }
         m_sortColumns.clear();

@@ -31,6 +31,7 @@
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "moc_wtrackmenu.cpp"
+#include "muxic/relatedtracks/relatedtracksmenu.h"
 #include "preferences/colorpalettesettings.h"
 #include "preferences/configobject.h"
 #include "preferences/dialog/dlgprefdeck.h"
@@ -192,6 +193,10 @@ void WTrackMenu::createMenus() {
         m_pCrateMenu->setTitle(tr("Crates"));
         m_pCrateMenu->setObjectName("CratesMenu");
         connect(m_pCrateMenu, &QMenu::aboutToShow, this, &WTrackMenu::slotPopulateCrateMenu);
+    }
+
+    if (featureIsEnabled(Feature::RelatedTracks)) {
+        m_pRelatedTracksMenu = make_parented<muxic::RelatedTracksMenu>(this, m_pLibrary);
     }
 
     if (featureIsEnabled(Feature::Metadata)) {
@@ -679,6 +684,10 @@ void WTrackMenu::setupActions() {
         addMenu(m_pCrateMenu);
     }
 
+    if (featureIsEnabled(Feature::RelatedTracks)) {
+        addMenu(m_pRelatedTracksMenu);
+    }
+
     if (featureIsEnabled(Feature::Remove)) {
         if (m_pTrackModel->hasCapabilities(TrackModel::Capability::Remove)) {
             addAction(m_pRemoveAct);
@@ -1148,6 +1157,10 @@ void WTrackMenu::updateMenus() {
         // Crate menu is lazy loaded on hover by slotPopulateCrateMenu
         // to avoid unnecessary database queries
         m_bCrateMenuLoaded = false;
+    }
+
+    if (featureIsEnabled(Feature::RelatedTracks)) {
+        m_pRelatedTracksMenu->updateSelection(m_pTrackModel, m_trackIndexList, getTrackIds());
     }
 
     if (featureIsEnabled(Feature::Remove)) {
@@ -3093,6 +3106,7 @@ bool WTrackMenu::featureIsEnabled(Feature flag) const {
     case Feature::Properties:
         return m_pTrackModel->hasCapabilities(TrackModel::Capability::Properties);
     case Feature::SearchRelated:
+    case Feature::RelatedTracks:
         return m_pLibrary != nullptr;
 #ifdef __STEM__
     case Feature::Stems:
