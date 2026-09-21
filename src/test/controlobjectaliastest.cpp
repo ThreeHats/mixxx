@@ -197,6 +197,16 @@ TEST_F(ControlObjectAliasTest, SkinControls) {
     auto showSamplersLegacy = ControlProxy(
             ConfigKey(QStringLiteral("[Samplers]"), QStringLiteral("show_samplers")));
     EXPECT_DOUBLE_EQ(showSamplers.get(), showSamplersLegacy.get());
+
+    auto showRelatedTracksPanel = ControlProxy(
+            ConfigKey(kSkinGroup, QStringLiteral("show_related_tracks_panel")));
+    auto showRelatedTracksPanelAlias = ControlProxy(ConfigKey(
+            QStringLiteral("[Library]"), QStringLiteral("show_related_tracks_panel")));
+    // The panel of the muxic fork starts on.
+    EXPECT_DOUBLE_EQ(1.0, showRelatedTracksPanel.get());
+    EXPECT_DOUBLE_EQ(showRelatedTracksPanel.get(), showRelatedTracksPanelAlias.get());
+    showRelatedTracksPanelAlias.set(0.0);
+    EXPECT_DOUBLE_EQ(0.0, showRelatedTracksPanel.get());
 }
 
 } // namespace
