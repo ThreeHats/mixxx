@@ -15,10 +15,8 @@ class TrackRelationStorage;
 
 /// Says when the related tracks panel must read its table again.
 ///
-/// The watcher follows the decks, the count of the decks and the relation
-/// table. A read waits for the decks to settle. A watcher that is not
-/// active reports nothing and remembers the request for the next time that
-/// the panel comes on screen.
+/// The watcher follows the decks and the relation table. A watcher that is
+/// not active reports nothing and remembers the request.
 class RelatedDeckWatcher : public QObject {
     Q_OBJECT
 

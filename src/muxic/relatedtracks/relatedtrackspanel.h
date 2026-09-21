@@ -25,9 +25,8 @@ class RelatedDeckWatcher;
 /// A second track table under the library table, with the tracks that go
 /// with the tracks on the decks.
 ///
-/// The panel lives in the library area of the skin, thus it follows the
-/// library into a window of its own and it takes the style of the skin.
-/// The control `[Skin],show_related_tracks_panel` shows and hides it.
+/// The panel lives in the library area of the skin, thus it takes the
+/// style of the skin. `[Skin],show_related_tracks_panel` shows and hides it.
 class RelatedTracksPanel : public QWidget {
     Q_OBJECT
 

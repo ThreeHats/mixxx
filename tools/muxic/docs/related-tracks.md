@@ -253,6 +253,78 @@ and says the count.
 
 The view keeps the search text of each node kind.
 
+## The panel in the library
+
+The panel is a second track table under the library table. It shows the
+tracks that go with the tracks on the decks, thus you can browse a crate
+and see what goes with what plays at the same time.
+
+The panel lives inside the library area of the skin. A splitter holds the
+library table above and the panel below. Pull the handle between them to
+give the panel more or less room. The panel follows the library into the
+window of its own (View > Library in a Window of its Own).
+
+| What | Where |
+|---|---|
+| Control | `[Skin],show_related_tracks_panel`, toggle, persistent, starts on |
+| Alias of the control | `[Library],show_related_tracks_panel` |
+| Menu entry | View > Show Related Tracks Panel |
+| Shortcut | Ctrl+8, in `res/keyboard/en_US.kbd.cfg` under `ViewMenu_ShowRelatedTracksPanel` |
+
+With the control at 0 the panel is not there at all and the library table
+takes its room. The panel stays when no deck holds a track: it shows an
+empty table and the line "No track on a deck". A panel that comes and goes
+during a set would move the library table under the hand of the user.
+
+### What the panel shows
+
+One row for each relation of each deck that holds a track:
+
+- The decks come in the order of their numbers. A deck that holds no
+  track has no row. The count of the decks follows `[App],num_decks`.
+- Under a deck the best relation comes first, then the artist.
+- A track that goes with two decks has one row per deck.
+- The relation rule is the rule of the node "Related > Deck N": the
+  relations that lead away from the track of the deck, and the relations
+  that go both ways.
+
+The columns are Deck, Relation, Relation Rating, Relation Note, Artist,
+Title, Key, BPM and Duration. To add a column, use the menu of the header,
+as in every other track table. The panel keeps its own column layout,
+because it has a settings namespace of its own.
+
+A row of the panel behaves like a row of the library table: a double click
+loads it as the double-click preference says, drag and drop to a deck
+works, and the track menu opens with the right button. The relation
+columns are read-only here. To change a relation, use the sidebar node or
+the track menu.
+
+The panel has one order: the deck, then the rating of the relation, then
+the artist. A click on the header sorts nothing, and the panel takes no
+sort column from `[Library],sort_column`. The library table owns that
+control.
+
+### The two buttons of the panel
+
+"Related" shows the relations. "Suggestions" shows the tracks that fit the
+tempo and the key of each deck, with the rules of Suggestions below. The
+panel starts on "Related".
+
+### The panel and the decks
+
+The panel reads its table again when a deck takes or gives back a track,
+when the count of the decks changes, and when a relation changes. A read
+waits 150 ms, thus a load of two decks takes one read. A panel that is off
+reads nothing and reads one time when it comes back.
+
+### Config keys
+
+| Key | Content |
+|---|---|
+| `[Skin] show_related_tracks_panel` | The state of the toggle, 0 or 1 |
+| `[Library] related_panel_height` | The height of the panel in pixels |
+| `[Library] related_panel_suggestions` | 1 while the panel shows the suggestions |
+
 ## Suggestions
 
 The Suggestions view is one SQL query. There is no background job and
@@ -328,9 +400,13 @@ under `[Library]` in the `.kbd.cfg` file.
 | `src/muxic/relatedtracks/relationratingdelegate.{h,cpp}` | The stars of the rating column |
 | `src/muxic/relatedtracks/relatedtracksmenu.{h,cpp}` | The submenu of the track menu |
 | `src/muxic/relatedtracks/relatedtracksfeature.{h,cpp}` | The sidebar node and the control |
+| `src/muxic/relatedtracks/decktrack.h` | A deck and the track on it |
+| `src/muxic/relatedtracks/relateddeckwatcher.{h,cpp}` | When the panel reads its table again |
+| `src/muxic/relatedtracks/relatedtrackspanel.{h,cpp}` | The panel under the library table |
 | `src/test/trackrelationstorage_test.cpp` | The DAO tests |
 | `src/test/relationsuggester_test.cpp` | The tempo and key rules |
 | `src/test/relatedtracksmodel_test.cpp` | The SQL of the views and the edits |
+| `src/test/relateddeckwatcher_test.cpp` | The decks and the read policy of the panel |
 
 The fork code is in the namespace `muxic`.
 
@@ -344,6 +420,12 @@ sort expression of a table column and a write into the cache of a row),
 `src/library/tabledelegates/stardelegate.h` (`paintItem` is virtual),
 `res/mixxx.qrc` (the icon) and `CMakeLists.txt`.
 
+The panel adds four more: `src/skin/legacy/legacyskinparser.cpp` (one line
+at the end of `parseLibrary`, which puts the library widget and the panel
+in a splitter), `src/skin/skincontrols.{h,cpp}` (the control and its
+alias), `src/widget/wmainmenubar.cpp` (the View entry) and
+`res/keyboard/en_US.kbd.cfg` (the shortcut).
+
 ## What is not done
 
 - The relation columns have no `SortColumnId`, thus a controller cannot
@@ -352,3 +434,11 @@ sort expression of a table column and a write into the cache of a row),
 - A relation can only be made with the track menu or the control. There is
   no way to make one from the Related view itself.
 - The Suggestions view does not read the tags or the genre.
+- A relation cannot be edited in the panel. The relation columns are
+  read-only there.
+- The panel has one order and no sort by a click on the header.
+- A row that the user picks in the panel does not become the selected
+  track of the library. The cover art and the node "Related > Selected
+  track" follow the library table only.
+- The panel takes no part in the focus chain of `[Library]`. The keyboard
+  reaches it with Tab or with a click.
