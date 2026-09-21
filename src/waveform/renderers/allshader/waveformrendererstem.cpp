@@ -12,6 +12,7 @@
 #include "track/track.h"
 #include "util/assert.h"
 #include "util/math.h"
+#include "waveform/renderers/stemwaveformscale.h"
 #include "waveform/renderers/waveformwidgetrenderer.h"
 #include "waveform/waveform.h"
 #include "waveform/waveformwidgetfactory.h"
@@ -200,7 +201,30 @@ bool WaveformRendererStem::preprocessInner() {
 
     const double maxSamplingRange = visualIncrementPerPixel / 2.0;
 
+    const int stemCount = static_cast<int>(std::min<qsizetype>(
+            stemInfo.size(), mixxx::kMaxSupportedStems));
+
     for (int visualIdx = 0; visualIdx < stripLength; visualIdx++) {
+        const int visualFrameStart = std::lround(xVisualFrame - maxSamplingRange);
+        const int visualFrameStop = std::lround(xVisualFrame + maxSamplingRange);
+
+        const int visualIndexStart = std::max(visualFrameStart * 2, 0);
+        const int visualIndexStop =
+                std::min(std::max(visualFrameStop, visualFrameStart + 1) * 2, dataSize - 1);
+
+        const float fVisualIdx = static_cast<float>(visualIdx) * invDevicePixelRatio;
+
+        // The max of the left and the right channel, for the mix and for each
+        // stem.
+        const mixxx::StemStripPeaks peaks = mixxx::stemStripPeaks(
+                data, visualIndexStart, visualIndexStop, stemCount);
+        // The four stems sum to the mix, thus each one alone is much smaller.
+        // This factor gives the tallest stem the height that the same music
+        // gets in a file with no stems, and keeps the size of the stems
+        // relative to each other.
+        const float stemScale = mixxx::stemOverlayScale(
+                peaks.all, peaks.loudestStem(stemCount));
+
         int stemLayer = 0;
         for (int stemIdx : std::as_const(m_stackOrder)) {
             if (stemIdx >= stemInfo.size()) {
@@ -214,29 +238,10 @@ bool WaveformRendererStem::preprocessInner() {
                       color_g = stemColor.greenF(),
                       color_b = stemColor.blueF(),
                       color_a = stemColor.alphaF() * (layerIdx ? m_opacity : m_outlineOpacity);
-                const int visualFrameStart = std::lround(xVisualFrame - maxSamplingRange);
-                const int visualFrameStop = std::lround(xVisualFrame + maxSamplingRange);
-
-                const int visualIndexStart = std::max(visualFrameStart * 2, 0);
-                const int visualIndexStop =
-                        std::min(std::max(visualFrameStop, visualFrameStart + 1) * 2, dataSize - 1);
-
-                const float fVisualIdx = static_cast<float>(visualIdx) * invDevicePixelRatio;
-
-                // Find the max values for current eq in the waveform data.
-                // - Max of left and right
-                uchar u8max{};
-                for (int chn = 0; chn < 2; chn++) {
-                    // data is interleaved left / right
-                    for (int i = visualIndexStart + chn; i < visualIndexStop + chn; i += 2) {
-                        const WaveformData& waveformData = data[i];
-
-                        u8max = math_max(u8max, waveformData.stems[stemIdx]);
-                    }
-                }
 
                 // Cast to float
-                float max = static_cast<float>(u8max) * allGain;
+                float max = static_cast<float>(peaks.stems[stemIdx]) *
+                        allGain * stemScale;
 
                 // Apply the gains
                 if (layerIdx) {
