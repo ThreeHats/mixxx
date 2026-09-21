@@ -70,6 +70,12 @@ class ColumnCache : public QObject {
 
         COLUMN_REKORDBOX_ANALYZE_PATH,
 
+        // Fork columns of muxic, see src/muxic/trackmeta.h
+        COLUMN_MUXIC_ENERGY,
+        COLUMN_MUXIC_DANCEABILITY,
+        COLUMN_MUXIC_TAGS,
+        COLUMN_MUXIC_LUFS,
+
         // NUM_COLUMNS should always be the last item.
         NUM_COLUMNS
     };

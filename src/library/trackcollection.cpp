@@ -79,6 +79,7 @@ void TrackCollection::connectDatabase(const QSqlDatabase& database) {
     m_analysisDao.initialize(database);
     m_libraryHashDao.initialize(database);
     m_crates.connectDatabase(database);
+    m_muxicTrackMetaDao.initialize(database);
 }
 
 void TrackCollection::disconnectDatabase() {
@@ -88,6 +89,7 @@ void TrackCollection::disconnectDatabase() {
     m_database = QSqlDatabase();
     m_trackDao.finish();
     m_crates.disconnectDatabase();
+    m_muxicTrackMetaDao.finish();
 }
 
 void TrackCollection::connectTrackSource(QSharedPointer<BaseTrackCache> pTrackSource) {
@@ -123,6 +125,10 @@ void TrackCollection::connectTrackSource(QSharedPointer<BaseTrackCache> pTrackSo
             &TrackDAO::tracksRemoved,
             m_pTrackSource.data(),
             &BaseTrackCache::slotTracksRemoved);
+    connect(&m_muxicTrackMetaDao,
+            &muxic::TrackMetaDao::tracksChanged,
+            m_pTrackSource.data(),
+            &BaseTrackCache::slotTracksAddedOrChanged);
 }
 
 QWeakPointer<BaseTrackCache> TrackCollection::disconnectTrackSource() {
@@ -132,6 +138,7 @@ QWeakPointer<BaseTrackCache> TrackCollection::disconnectTrackSource() {
     if (m_pTrackSource) {
         kLogger.info() << "Disconnecting track source";
         m_trackDao.disconnect(m_pTrackSource.data());
+        m_muxicTrackMetaDao.disconnect(m_pTrackSource.data());
         m_pTrackSource.reset();
     }
     return pWeakPtr;
@@ -399,6 +406,9 @@ bool TrackCollection::purgeTracks(
     QSet<CrateId> modifiedCrateSummaries(
             m_crates.collectCrateIdsOfTracks(trackIds));
     VERIFY_OR_DEBUG_ASSERT(m_crates.onPurgingTracks(trackIds)) {
+        return false;
+    }
+    VERIFY_OR_DEBUG_ASSERT(m_muxicTrackMetaDao.onPurgingTracks(trackIds)) {
         return false;
     }
     VERIFY_OR_DEBUG_ASSERT(transaction.commit()) {

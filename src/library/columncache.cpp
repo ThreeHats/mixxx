@@ -6,6 +6,7 @@
 #include "library/dao/trackschema.h"
 #include "library/library_prefs.h"
 #include "moc_columncache.cpp"
+#include "muxic/trackmeta.h"
 #include "util/db/dbconnection.h"
 
 namespace {
@@ -14,6 +15,10 @@ const QString kSortInt = QStringLiteral("cast(%1 as integer)");
 const QString kSortNoCase = QStringLiteral("lower(%1)");
 const QString kSortNoCaseLex = mixxx::DbConnection::collateLexicographically(
         QStringLiteral("lower(%1)"));
+// The column holds the ReplayGain ratio, which falls while the loudness rises.
+// The minus sign puts the quiet tracks first in ascending order. A ratio of 0
+// means "not analyzed" and gives NULL, thus those rows group at one end.
+const QString kSortLufs = QStringLiteral("CASE WHEN %1 > 0 THEN -%1 END");
 
 struct ColumnProperties {
     const QString* pName;
@@ -186,7 +191,19 @@ constexpr ColumnProperties kColumnPropertiesByEnum[] = {
                 &PLAYLISTTRACKSTABLE_DATETIMEADDED,
                 QT_TRANSLATE_NOOP("BaseSqlTableModel", "Timestamp"),
                 kDefaultColumnWidth * 80 / 50},
-        DI(ColumnCache::COLUMN_REKORDBOX_ANALYZE_PATH){&REKORDBOX_ANALYZE_PATH, nullptr, 0}};
+        DI(ColumnCache::COLUMN_REKORDBOX_ANALYZE_PATH){&REKORDBOX_ANALYZE_PATH, nullptr, 0},
+        DI(ColumnCache::COLUMN_MUXIC_ENERGY){&muxic::kColumnEnergy,
+                QT_TRANSLATE_NOOP("BaseTrackTableModel", "Energy"),
+                kDefaultColumnWidth},
+        DI(ColumnCache::COLUMN_MUXIC_DANCEABILITY){&muxic::kColumnDanceability,
+                QT_TRANSLATE_NOOP("BaseTrackTableModel", "Danceability"),
+                kDefaultColumnWidth * 2},
+        DI(ColumnCache::COLUMN_MUXIC_TAGS){&muxic::kColumnTags,
+                QT_TRANSLATE_NOOP("BaseTrackTableModel", "Tags"),
+                kDefaultColumnWidth * 4},
+        DI(ColumnCache::COLUMN_MUXIC_LUFS){&muxic::kColumnLufs,
+                QT_TRANSLATE_NOOP("BaseTrackTableModel", "Loudness (LUFS)"),
+                kDefaultColumnWidth * 2}};
 static_assert(std::size(kColumnPropertiesByEnum) == ColumnCache::NUM_COLUMNS);
 
 #if defined(__clang__)
@@ -246,6 +263,9 @@ void ColumnCache::setColumns(QStringList columns) {
     insertColumnSortByEnum(COLUMN_LIBRARYTABLE_TIMESPLAYED, kSortInt);
 
     insertColumnSortByEnum(COLUMN_TRACKLOCATIONSTABLE_LOCATION, kSortNoCase);
+
+    insertColumnSortByEnum(COLUMN_MUXIC_TAGS, kSortNoCase);
+    insertColumnSortByEnum(COLUMN_MUXIC_LUFS, kSortLufs);
 
     slotSetKeySortOrder(m_pKeyNotationCP->get());
 }

@@ -13,6 +13,7 @@
 #include "library/dao/playlistdao.h"
 #include "library/dao/trackdao.h"
 #include "library/trackset/crate/cratestorage.h"
+#include "muxic/trackmetadao.h"
 #include "preferences/usersettings.h"
 #include "util/thread_affinity.h"
 
@@ -68,6 +69,10 @@ class TrackCollection : public QObject,
     AnalysisDao& getAnalysisDAO() {
         DEBUG_ASSERT_QOBJECT_THREAD_AFFINITY(this);
         return m_analysisDao;
+    }
+    muxic::TrackMetaDao& getMuxicTrackMetaDAO() {
+        DEBUG_ASSERT_QOBJECT_THREAD_AFFINITY(this);
+        return m_muxicTrackMetaDao;
     }
 
     void connectTrackSource(QSharedPointer<BaseTrackCache> pTrackSource);
@@ -179,6 +184,7 @@ class TrackCollection : public QObject,
     AnalysisDao m_analysisDao;
     LibraryHashDAO m_libraryHashDao;
     TrackDAO m_trackDao;
+    muxic::TrackMetaDao m_muxicTrackMetaDao;
 
     QSharedPointer<BaseTrackCache> m_pTrackSource;
 };

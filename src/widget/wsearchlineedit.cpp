@@ -219,6 +219,9 @@ void WSearchLineEdit::setupToolTip(const QString& searchInCurrentViewShortcut,
     setBaseTooltip(tr("Search", "noun") + "\n" +
             tr("Enter a string to search for.") + " " +
             tr("Use operators like bpm:115-128, artist:BooFar, -year:1990.") +
+            "\n" +
+            tr("The muxic columns take energy:>=7, energy:5-8, "
+               "danceability:>0.7 and tag:vocal.") +
             "\n" + tr("See User Manual > Mixxx Library for more information.") +
             "\n\n" + searchInCurrentViewShortcut + ": " +
             tr("Focus/Select All (Search in current view)",

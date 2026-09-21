@@ -1511,6 +1511,12 @@ add_library(
   src/musicbrainz/web/coverartarchiveimagetask.cpp
   src/musicbrainz/web/coverartarchivelinkstask.cpp
   src/musicbrainz/web/musicbrainzrecordingstask.cpp
+  src/muxic/librarycolumns.cpp
+  src/muxic/searchfilters.cpp
+  src/muxic/trackmeta.cpp
+  src/muxic/trackmetadao.cpp
+  src/muxic/trackmetafields.cpp
+  src/muxic/trackmetapoller.cpp
   src/nativeeventhandlerwin.cpp
   src/network/jsonwebtask.cpp
   src/network/networktask.cpp
@@ -2959,6 +2965,7 @@ if(BUILD_TESTING)
     src/test/mixxxtest.cpp
     src/test/mock_networkaccessmanager.cpp
     src/test/musicbrainzrecordingstasktest.cpp
+    src/test/muxictrackmetatest.cpp
     src/test/performancetimer_test.cpp
     src/test/playcountertest.cpp
     src/test/playermanagertest.cpp

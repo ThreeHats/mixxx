@@ -5,7 +5,9 @@
 
 #include "library/searchquery.h"
 #include "library/searchqueryparser.h"
+#include "library/trackcollection.h"
 #include "library/trackset/crate/crate.h"
+#include "muxic/trackmetadao.h"
 #include "test/librarytest.h"
 #include "track/track.h"
 #include "util/assert.h"
@@ -1420,4 +1422,166 @@ TEST_F(SearchQueryParserTest, QuotedOrOperator) {
     pTrackI->setTitle("a | contrived|example and more");
     pTrackI->setComment("house");
     EXPECT_TRUE(pQuery->match(pTrackI));
+}
+
+TEST_F(SearchQueryParserTest, MuxicEnergyOperator) {
+    auto pQuery(m_parser.parseQuery("energy:>=7", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral("muxic_energy >= 7")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicEnergyRange) {
+    auto pQuery(m_parser.parseQuery("energy:5-8", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral("muxic_energy BETWEEN 5 AND 8")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicEnergyShortName) {
+    auto pQuery(m_parser.parseQuery("en:<4", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral("muxic_energy < 4")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicDanceability) {
+    auto pQuery(m_parser.parseQuery("danceability:>0.7", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral("muxic_danceability > 0.7")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagIsExact) {
+    auto pQuery(m_parser.parseQuery("tag:vocal", QString()));
+
+    // The commas of the stored form make the match exact: a track tagged
+    // "vocalist" does not match "vocal".
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,vocal,%' ESCAPE '\\'")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagWithSpaces) {
+    auto pQuery(m_parser.parseQuery("tag:\"two words\"", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,two words,%' ESCAPE '\\'")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagIsLowerCase) {
+    auto pQuery(m_parser.parseQuery("tag:Vocal", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,vocal,%' ESCAPE '\\'")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagNegated) {
+    auto pQuery(m_parser.parseQuery("-tag:vocal", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "NOT (muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,vocal,%' ESCAPE '\\')")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagMissing) {
+    auto pQuery(m_parser.parseQuery("tag:\"\"", QString()));
+
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "muxic_tags IS NULL OR muxic_tags IS ''")),
+            qPrintable(pQuery->toSql()));
+}
+
+TEST_F(SearchQueryParserTest, MuxicTagList) {
+    auto pQuery(m_parser.parseQuery("tag:bass,vocal", QString()));
+
+    // Two tags in one keyword mean both tags.
+    EXPECT_STREQ(qPrintable(QStringLiteral(
+                         "(muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,bass,%' ESCAPE '\\') AND "
+                         "(muxic_tags IS NOT NULL AND "
+                         "muxic_tags LIKE '%,vocal,%' ESCAPE '\\')")),
+            qPrintable(pQuery->toSql()));
+}
+
+/// The muxic values are not in the track object. A track with changes that are
+/// not yet in the database still has to answer a filter right, thus the nodes
+/// read the value through the data access object.
+class MuxicFilterMatchTest : public SearchQueryParserTest {
+  protected:
+    muxic::TrackMetaDao& dao() const {
+        return internalCollection()->getMuxicTrackMetaDAO();
+    }
+
+    TrackPointer dirtyTrack(QStringView type) {
+        const QString location = getTestFile(type);
+        const TrackId trackId = addTrackToCollection(location);
+        EXPECT_TRUE(trackId.isValid());
+        TrackPointer pTrack(Track::newDummy(location, trackId));
+        // A change that the database does not have yet.
+        pTrack->setComment(QStringLiteral("not saved"));
+        return pTrack;
+    }
+};
+
+TEST_F(MuxicFilterMatchTest, EnergyMatchesTheStoredValue) {
+    TrackPointer pTrack = dirtyTrack(QStringLiteral("-png.mp3"));
+    ASSERT_TRUE(dao().setEnergy(pTrack->getId(), 8));
+
+    EXPECT_TRUE(m_parser.parseQuery("energy:>=7", QString())->match(pTrack));
+    EXPECT_FALSE(m_parser.parseQuery("energy:<7", QString())->match(pTrack));
+    EXPECT_TRUE(m_parser.parseQuery("energy:5-8", QString())->match(pTrack));
+    EXPECT_FALSE(m_parser.parseQuery("energy:1-4", QString())->match(pTrack));
+}
+
+TEST_F(MuxicFilterMatchTest, EnergyMatchesTheMissingValue) {
+    TrackPointer pTrack = dirtyTrack(QStringLiteral("-png.mp3"));
+
+    // No row at all means no energy.
+    EXPECT_TRUE(m_parser.parseQuery("energy:\"\"", QString())->match(pTrack));
+    EXPECT_FALSE(m_parser.parseQuery("energy:>=1", QString())->match(pTrack));
+
+    ASSERT_TRUE(dao().setEnergy(pTrack->getId(), 3));
+    EXPECT_FALSE(m_parser.parseQuery("energy:\"\"", QString())->match(pTrack));
+}
+
+TEST_F(MuxicFilterMatchTest, DanceabilityMatchesTheStoredValue) {
+    TrackPointer pTrack = dirtyTrack(QStringLiteral("-png.mp3"));
+    ASSERT_TRUE(dao().setDanceability(pTrack->getId(), 0.8));
+
+    EXPECT_TRUE(m_parser.parseQuery("danceability:>0.7", QString())->match(pTrack));
+    EXPECT_FALSE(m_parser.parseQuery("danceability:<0.7", QString())->match(pTrack));
+}
+
+TEST_F(MuxicFilterMatchTest, TagMatchesWholeTagsOnly) {
+    TrackPointer pTrack = dirtyTrack(QStringLiteral("-png.mp3"));
+    ASSERT_TRUE(dao().setTags(pTrack->getId(),
+            {QStringLiteral("vocal"), QStringLiteral("two words")}));
+
+    EXPECT_TRUE(m_parser.parseQuery("tag:vocal", QString())->match(pTrack));
+    EXPECT_TRUE(m_parser.parseQuery("tag:Vocal", QString())->match(pTrack));
+    EXPECT_TRUE(m_parser.parseQuery("tag:\"two words\"", QString())->match(pTrack));
+    EXPECT_FALSE(m_parser.parseQuery("tag:voc", QString())->match(pTrack));
+    EXPECT_FALSE(m_parser.parseQuery("tag:bass", QString())->match(pTrack));
+    // Two tags in one keyword mean both tags. A tag with a space needs the
+    // quotes, because the query splits on spaces first.
+    EXPECT_TRUE(m_parser.parseQuery("tag:\"vocal,two words\"", QString())->match(pTrack));
+    EXPECT_FALSE(m_parser.parseQuery("tag:vocal,bass", QString())->match(pTrack));
+}
+
+TEST_F(MuxicFilterMatchTest, NoTagMatchesATrackWithoutTags) {
+    TrackPointer pTrack = dirtyTrack(QStringLiteral("-png.mp3"));
+
+    EXPECT_TRUE(m_parser.parseQuery("tag:\"\"", QString())->match(pTrack));
+    EXPECT_TRUE(m_parser.parseQuery("-tag:vocal", QString())->match(pTrack));
+
+    ASSERT_TRUE(dao().setTags(pTrack->getId(), {QStringLiteral("vocal")}));
+    EXPECT_FALSE(m_parser.parseQuery("tag:\"\"", QString())->match(pTrack));
+    EXPECT_FALSE(m_parser.parseQuery("-tag:vocal", QString())->match(pTrack));
 }

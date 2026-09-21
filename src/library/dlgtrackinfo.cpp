@@ -13,6 +13,7 @@
 #include "library/library_prefs.h"
 #include "library/trackmodel.h"
 #include "moc_dlgtrackinfo.cpp"
+#include "muxic/trackmetafields.h"
 #include "preferences/colorpalettesettings.h"
 #include "sources/soundsourceproxy.h"
 #include "track/beatutils.h"
@@ -65,8 +66,15 @@ DlgTrackInfo::DlgTrackInfo(
     init();
 }
 
+DlgTrackInfo::~DlgTrackInfo() = default;
+
 void DlgTrackInfo::init() {
     setupUi(this);
+    m_pMuxicFields = std::make_unique<muxic::TrackMetaFields>(muxic_groupBox,
+            spinMuxicEnergy,
+            txtMuxicTags,
+            txtMuxicDanceability,
+            txtMuxicLufs);
     setWindowIcon(QIcon(MIXXX_ICON_PATH));
 
     // Store tag edit widget pointers to allow focusing a specific widgets when
@@ -392,6 +400,8 @@ void DlgTrackInfo::updateFromTrack(const Track& track) {
 
     reloadTrackBeats(track);
 
+    m_pMuxicFields->load(track.getId());
+
     m_pWStarRating->slotSetRating(m_pLoadedTrack->getRating());
 }
 
@@ -459,6 +469,7 @@ void DlgTrackInfo::updateTrackMetadataFields() {
     txtReplayGain->setText(
             mixxx::ReplayGain::ratioToString(
                     trackInfo.getReplayGain().getRatio()));
+    m_pMuxicFields->showLoudness(trackInfo.getReplayGain().getRatio());
 
     auto samplerate = signalInfo.getSampleRate();
     if (samplerate.isValid()) {
@@ -681,6 +692,8 @@ void DlgTrackInfo::saveTrack() {
     // both members must remain valid. Do not use std::move() for passing arguments!
     // Else triggering apply twice in quick succession might clear the metadata.
     m_pLoadedTrack->replaceRecord(m_trackRecord, m_pBeatsClone);
+
+    m_pMuxicFields->save();
 }
 
 void DlgTrackInfo::clear() {
@@ -703,6 +716,8 @@ void DlgTrackInfo::clear() {
     updateSpinBpmFromBeats();
 
     txtLocation->setText("");
+
+    m_pMuxicFields->clear();
 
     m_pWStarRating->slotSetRating(0);
 }
