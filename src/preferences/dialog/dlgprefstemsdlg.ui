@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DlgPrefStemsDlg</class>
+ <widget class="QWidget" name="DlgPrefStemsDlg">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>680</width>
+    <height>420</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Stem Preferences</string>
+  </property>
+  <layout class="QVBoxLayout" name="stemsLayout">
+   <item>
+    <widget class="QGroupBox" name="separationGroup">
+     <property name="title">
+      <string>Separation</string>
+     </property>
+     <layout class="QFormLayout" name="separationFormLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="separatorCommandLabel">
+        <property name="text">
+         <string>Command:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="separatorCommandEdit"/>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="separatorCommandHelpLabel">
+        <property name="text">
+         <string>$INPUT is the source file, $OUTPUT_DIR is the directory for the four stem files, $MODEL is the model below.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="modelLabel">
+        <property name="text">
+         <string>Model:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <widget class="QLineEdit" name="modelEdit"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="packingGroup">
+     <property name="title">
+      <string>Stem File</string>
+     </property>
+     <layout class="QFormLayout" name="packingFormLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="encoderCommandLabel">
+        <property name="text">
+         <string>Encode command:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="encoderCommandEdit"/>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="encoderCommandHelpLabel">
+        <property name="text">
+         <string>$INPUT, $OUTPUT and $SAMPLE_RATE. The command must write an MP4 audio file. An empty command puts the files in the stem file without a recode.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="muxerPathLabel">
+        <property name="text">
+         <string>MP4Box:</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <layout class="QHBoxLayout" name="muxerPathLayout">
+        <item>
+         <widget class="QLineEdit" name="muxerPathEdit"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="muxerPathBrowseButton">
+          <property name="text">
+           <string>Browse...</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="outputGroup">
+     <property name="title">
+      <string>Output</string>
+     </property>
+     <layout class="QVBoxLayout" name="outputLayout">
+      <item>
+       <widget class="QRadioButton" name="sourceDirectoryRadio">
+        <property name="text">
+         <string>Next to the source file</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="customDirectoryRadio">
+        <property name="text">
+         <string>In this directory:</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <layout class="QHBoxLayout" name="outputDirectoryLayout">
+        <item>
+         <widget class="QLineEdit" name="outputDirectoryEdit"/>
+        </item>
+        <item>
+         <widget class="QPushButton" name="outputDirectoryBrowseButton">
+          <property name="text">
+           <string>Browse...</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="stemsSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

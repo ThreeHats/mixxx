@@ -59,11 +59,12 @@ class WTrackMenu : public QMenu {
         SelectInLibrary = 1 << 15,
         Analyze = 1 << 16,
         FindOnWeb = 1 << 17,
+        Stems = 1 << 18,
         TrackModelFeatures = Remove | HideUnhidePurge,
         All = AutoDJ | LoadTo | Playlist | Crate | Remove | Metadata | Reset | Analyze |
                 BPM | Color | HideUnhidePurge | RemoveFromDisk | FileBrowser |
                 Properties | SearchRelated | UpdateReplayGainFromPregain | SelectInLibrary |
-                FindOnWeb
+                FindOnWeb | Stems
     };
     Q_DECLARE_FLAGS(Features, Feature)
 
@@ -83,6 +84,7 @@ class WTrackMenu : public QMenu {
             WTrackMenu::Feature::Properties |
             WTrackMenu::Feature::UpdateReplayGainFromPregain |
             WTrackMenu::Feature::FindOnWeb |
+            WTrackMenu::Feature::Stems |
             WTrackMenu::Feature::SelectInLibrary};
 
     WTrackMenu(QWidget* parent,
@@ -156,6 +158,12 @@ class WTrackMenu : public QMenu {
     void slotClearReplayGain();
     void slotClearWaveform();
     void slotClearAllMetadata();
+
+#ifdef __STEM__
+    // Stem conversion
+    void slotConvertToStems();
+    void slotShowStemConversions();
+#endif
 
     // Analysis
     void slotAnalyze();
@@ -355,6 +363,13 @@ class WTrackMenu : public QMenu {
     // Track rating and color
     parented_ptr<WStarRatingAction> m_pStarRatingAction;
     parented_ptr<WColorPickerAction> m_pColorPickerAction;
+
+#ifdef __STEM__
+    // Stem conversion
+    parented_ptr<QMenu> m_pStemsMenu;
+    parented_ptr<QAction> m_pConvertToStemsAction;
+    parented_ptr<QAction> m_pShowStemConversionsAction;
+#endif
 
     // Analysis actions
     parented_ptr<QAction> m_pAnalyzeAction;

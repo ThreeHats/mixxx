@@ -2862,7 +2862,15 @@ if(STEM)
   target_sources(
     mixxx-lib
     PRIVATE
+      src/preferences/dialog/dlgprefstems.cpp
+      src/preferences/dialog/dlgprefstemsdlg.ui
       src/sources/soundsourcestem.cpp
+      src/stems/dlgstemconversion.cpp
+      src/stems/dlgstemconversion.ui
+      src/stems/stemconversionjob.cpp
+      src/stems/stemconversionmanager.cpp
+      src/stems/stemconversionsettings.cpp
+      src/stems/stemtrackcopy.cpp
       src/track/steminfoimporter.cpp
       src/track/steminfo.cpp
       src/widget/wtrackstemmenu.cpp
@@ -3003,6 +3011,7 @@ if(BUILD_TESTING)
       src/test/stemtest.cpp
       src/test/steminfotest.cpp
       src/test/stemcontrolobjecttest.cpp
+      src/test/stemconversion_test.cpp
     )
   endif()
   if(BUILD_BENCH)

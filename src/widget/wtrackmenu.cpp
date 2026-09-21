@@ -53,6 +53,7 @@
 #include "widget/wstarrating.h"
 #include "widget/wstarratingaction.h"
 #ifdef __STEM__
+#include "stems/stemconversionmanager.h"
 #include "widget/wtrackstemmenu.h"
 #endif
 
@@ -235,6 +236,13 @@ void WTrackMenu::createMenus() {
         m_pAnalyzeMenu = make_parented<QMenu>(this);
         m_pAnalyzeMenu->setTitle(tr("Analyze"));
     }
+
+#ifdef __STEM__
+    if (featureIsEnabled(Feature::Stems)) {
+        m_pStemsMenu = make_parented<QMenu>(this);
+        m_pStemsMenu->setTitle(tr("Stems"));
+    }
+#endif
 
     if (featureIsEnabled(Feature::SearchRelated)) {
         DEBUG_ASSERT(!m_pSearchRelatedMenu);
@@ -594,6 +602,23 @@ void WTrackMenu::createActions() {
                 &WTrackMenu::slotReanalyzeWithVariableTempo);
     }
 
+#ifdef __STEM__
+    if (featureIsEnabled(Feature::Stems)) {
+        m_pConvertToStemsAction = make_parented<QAction>(tr("Convert to Stems"), this);
+        connect(m_pConvertToStemsAction,
+                &QAction::triggered,
+                this,
+                &WTrackMenu::slotConvertToStems);
+
+        m_pShowStemConversionsAction =
+                make_parented<QAction>(tr("Show Conversions..."), this);
+        connect(m_pShowStemConversionsAction,
+                &QAction::triggered,
+                this,
+                &WTrackMenu::slotShowStemConversions);
+    }
+#endif
+
     // This action is only usable when m_deckGroup is set. That is true only
     // for WTrackmenu instantiated by WTrackProperty and other deck widgets, thus
     // don't create it if a track model is set.
@@ -769,6 +794,14 @@ void WTrackMenu::setupActions() {
         m_pAnalyzeMenu->addAction(m_pReanalyzeVarBpmAction);
         addMenu(m_pAnalyzeMenu);
     }
+
+#ifdef __STEM__
+    if (featureIsEnabled(Feature::Stems)) {
+        m_pStemsMenu->addAction(m_pConvertToStemsAction);
+        m_pStemsMenu->addAction(m_pShowStemConversionsAction);
+        addMenu(m_pStemsMenu);
+    }
+#endif
 
     // This action is created only for menus instantiated by deck widgets (e.g.
     // WTrackProperty) and if UpdateReplayGainFromPregain is supported.
@@ -1800,6 +1833,31 @@ void WTrackMenu::addToAnalysis(AnalyzerTrack::Options options) {
 
     emit m_pLibrary->analyzeTracks(tracks);
 }
+
+#ifdef __STEM__
+void WTrackMenu::slotConvertToStems() {
+    if (isEmpty() || !m_pLibrary) {
+        return;
+    }
+    mixxx::StemConversionManager* pManager = m_pLibrary->stemConversionManager();
+    VERIFY_OR_DEBUG_ASSERT(pManager) {
+        return;
+    }
+    pManager->enqueue(getTrackPointers());
+    slotShowStemConversions();
+}
+
+void WTrackMenu::slotShowStemConversions() {
+    if (!m_pLibrary) {
+        return;
+    }
+    mixxx::StemConversionManager* pManager = m_pLibrary->stemConversionManager();
+    VERIFY_OR_DEBUG_ASSERT(pManager) {
+        return;
+    }
+    pManager->showConversions(parentWidget());
+}
+#endif
 
 void WTrackMenu::slotAnalyze() {
     addToAnalysis();
@@ -3036,6 +3094,12 @@ bool WTrackMenu::featureIsEnabled(Feature flag) const {
         return m_pTrackModel->hasCapabilities(TrackModel::Capability::Properties);
     case Feature::SearchRelated:
         return m_pLibrary != nullptr;
+#ifdef __STEM__
+    case Feature::Stems:
+        // The conversion only reads the source file and writes a new one,
+        // thus a track of any collection can go through it.
+        return m_pLibrary != nullptr;
+#endif
     case Feature::SelectInLibrary:
         return m_pTrack != nullptr;
     default:

@@ -41,6 +41,12 @@ class LibraryExporter;
 } // namespace mixxx
 #endif
 
+#ifdef __STEM__
+namespace mixxx {
+class StemConversionManager;
+} // namespace mixxx
+#endif
+
 // A Library class is a container for all the model-side aspects of the library.
 // A library widget can be attached to the Library object by calling bindLibraryWidget.
 class Library: public QObject {
@@ -62,6 +68,12 @@ class Library: public QObject {
     }
 
     TrackCollectionManager* trackCollectionManager() const;
+
+#ifdef __STEM__
+    mixxx::StemConversionManager* stemConversionManager() const {
+        return m_pStemConversionManager;
+    }
+#endif
 
     TrackAnalysisScheduler::Pointer createTrackAnalysisScheduler(
             int numWorkerThreads,
@@ -193,6 +205,9 @@ class Library: public QObject {
 
     parented_ptr<SidebarModel> m_pSidebarModel;
     parented_ptr<LibraryControl> m_pLibraryControl;
+#ifdef __STEM__
+    parented_ptr<mixxx::StemConversionManager> m_pStemConversionManager;
+#endif
 
     QList<LibraryFeature*> m_features;
     const static QString m_sTrackViewName;

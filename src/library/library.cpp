@@ -33,6 +33,9 @@
 #include "library/traktor/traktorfeature.h"
 #include "mixer/playermanager.h"
 #include "moc_library.cpp"
+#ifdef __STEM__
+#include "stems/stemconversionmanager.h"
+#endif
 #include "util/assert.h"
 #include "util/logger.h"
 #include "util/sandbox.h"
@@ -71,6 +74,11 @@ Library::Library(
           m_pTrackCollectionManager(pTrackCollectionManager),
           m_pSidebarModel(make_parented<SidebarModel>(this)),
           m_pLibraryControl(make_parented<LibraryControl>(this)),
+#ifdef __STEM__
+          m_pStemConversionManager(
+                  make_parented<mixxx::StemConversionManager>(
+                          pConfig, pTrackCollectionManager, this)),
+#endif
           m_pLibraryWidget(nullptr),
           m_pKeyNotation(std::make_unique<ControlObject>(
                   mixxx::library::prefs::kKeyNotationConfigKey, false)) {
