@@ -230,8 +230,30 @@ each other, thus you still read which part is loud. The code is in
   Mixxx, `src/test/stems/sin_AAC_256kbps_VBR.stem.mp4`, has the same shape:
   the mix stream peaks at +1.0 dB and each stem stream at -3.2 dB. The owner
   can report the change to Mixxx.
-- The ReplayGain is not the cause. The gain analyzer sums the eight channels
-  in the same way, and the job copies the gain of the source track.
+- The ReplayGain is not the cause. The job copies the gain of the source
+  track, and the visual gain of a waveform follows that gain.
+
+## The ReplayGain of a stem file
+
+The work on the waveform found a second bug of Mixxx. The EBU R128
+analyzer, which computes ReplayGain 2.0, gave the eight channels of a stem
+source to libebur128 as they are. libebur128 reads more than two channels as
+a surround signal, thus it read the drums as left and right, the left bass
+channel as the center, the other channels as the two surround speakers with
+a weight of 1.41, and it dropped the vocals and the right bass channel.
+
+The measured error of a test file is **5.83 dB**. A stem file that Mixxx
+analyzes itself thus plays too loud and draws a waveform that is too big,
+because the visual gain of a waveform follows `total_gain`.
+
+The fork mixes the stem channels down to stereo before the analyzer, in the
+same way as the ReplayGain 1.0 analyzer already does. The code is in
+`src/analyzer/analyzerebur128.cpp`.
+
+A stem file that the fork makes is not affected, because the job copies the
+ReplayGain of the source track and the analyzer then does not run. A stem
+file from another source, for example a file that you buy, is affected. This
+is a bug of Mixxx, thus the owner can report the change.
 
 **Preferences > Waveforms** has a **Display mode** for stem tracks. With
 **Stacked**, each part gets a quarter of the height, thus the waveform is

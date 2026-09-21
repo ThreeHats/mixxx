@@ -9,6 +9,7 @@
 #include <array>
 #include <cmath>
 
+#include "analyzer/analyzerebur128.h"
 #include "analyzer/analyzertrack.h"
 #include "analyzer/analyzerwaveform.h"
 #include "audio/types.h"
@@ -148,13 +149,95 @@ class StemWaveformTest : public MixxxTest {
                 readable.readableData() + readable.readableLength());
         return analyzeBuffer(samples, channelCount);
     }
+
+    /// Decode a file, run the EBU R128 analyzer and give the ReplayGain ratio.
+    double replayGainOfFile(const QString& filePath,
+            mixxx::audio::ChannelCount channelCount) {
+        TrackPointer pTrack = Track::newTemporary(filePath);
+        mixxx::AudioSource::OpenParams params;
+        params.setChannelCount(channelCount);
+        const auto pSource = SoundSourceProxy(pTrack).openAudioSource(params);
+        EXPECT_NE(nullptr, pSource);
+        if (!pSource) {
+            return 0.0;
+        }
+        mixxx::SampleBuffer buffer(pSource->frameLength() * channelCount);
+        const auto readable = pSource->readSampleFrames(
+                mixxx::WritableSampleFrames(pSource->frameIndexRange(),
+                        mixxx::SampleBuffer::WritableSlice(
+                                buffer.data(), buffer.size())));
+        AnalyzerEbur128 analyzer(config());
+        EXPECT_TRUE(analyzer.initialize(AnalyzerTrack(pTrack),
+                mixxx::audio::SampleRate(kSampleRate),
+                channelCount,
+                pSource->frameLength()));
+        EXPECT_TRUE(analyzer.processSamples(
+                readable.readableData(), readable.readableLength()));
+        analyzer.storeResults(pTrack);
+        analyzer.cleanup();
+        return pTrack->getReplayGain().getRatio();
+    }
+
+    /// Run the conversion job over a tone and give the path of the stem file.
+    /// Each stem holds the same tone at its share of the level of the source.
+    QString makeStemFile(const QString& workDirPath) {
+        const QString sourceFilePath =
+                QDir(workDirPath).filePath(QStringLiteral("tone.wav"));
+        EXPECT_TRUE(writeToneWav(sourceFilePath, kMixAmplitude, kFrameCount));
+        TrackPointer pSource = Track::newTemporary(sourceFilePath);
+        pSource->setAudioProperties(mixxx::audio::ChannelCount::stereo(),
+                mixxx::audio::SampleRate(kSampleRate),
+                mixxx::audio::Bitrate(),
+                mixxx::Duration::fromSeconds(1));
+
+        const QDir stemDir(QDir(workDirPath).filePath(QStringLiteral("stems")));
+        EXPECT_TRUE(QDir().mkpath(stemDir.absolutePath()));
+        const QStringList stemNames{QStringLiteral("drums"),
+                QStringLiteral("bass"),
+                QStringLiteral("other"),
+                QStringLiteral("vocals")};
+        for (int stemIdx = 0; stemIdx < stemNames.size(); ++stemIdx) {
+            EXPECT_TRUE(writeToneWav(
+                    stemDir.absoluteFilePath(stemNames.at(stemIdx) +
+                            QStringLiteral(".wav")),
+                    kMixAmplitude * kStemAmplitudeRatio[stemIdx],
+                    kFrameCount));
+        }
+
+        const QString separatorScript =
+                getTestDir().filePath(QStringLiteral("stems/fake_separator.sh"));
+        mixxx::StemConversionSettings settings;
+        settings.setSeparatorCommand(
+                QStringLiteral("/bin/sh \"%1\" from $MODEL $OUTPUT_DIR "
+                               "\"$INPUT\" \"%2\"")
+                        .arg(separatorScript, stemDir.absolutePath()));
+        settings.setModel(QStringLiteral("testmodel"));
+        settings.setEncoderCommand(QString());
+        settings.setMuxerPath(muxerPathOrEmpty());
+        settings.setOutputMode(mixxx::StemOutputMode::CustomDirectory);
+        settings.setOutputDirectory(workDirPath);
+
+        mixxx::StemConversionJob job(settings, pSource);
+        QSignalSpy spy(&job, &mixxx::StemConversionJob::finished);
+        job.start();
+        EXPECT_TRUE(spy.count() == 1 || spy.wait(120000));
+        EXPECT_EQ(mixxx::StemConversionJob::State::Succeeded, job.state())
+                << job.errorMessage().toStdString();
+
+        const QString stemFilePath =
+                QDir(workDirPath).filePath(QStringLiteral("tone.stem.mp4"));
+        EXPECT_TRUE(QFile::exists(stemFilePath));
+        EXPECT_TRUE(SoundSourceProxy::isFileTypeSupported(
+                            QStringLiteral("stem.mp4")) ||
+                SoundSourceProxy::registerProviders());
+        return stemFilePath;
+    }
 };
 
 } // anonymous namespace
 
-// The analyzer mixes the stem channels down before it fills the low, mid,
-// high and all bands. The all band of a stem track must thus hold the level
-// of the mix, and the stem bands hold the level of one part alone.
+// The all band of a stem track holds the level of the mix, because the
+// analyzer mixes the eight channels down. The stem bands hold one part.
 TEST_F(StemWaveformTest, AnalyzerGivesTheStemTrackTheLevelOfTheMix) {
     constexpr int kStereoSamples = kFrameCount * 2;
     std::vector<CSAMPLE> mix(kStereoSamples);
@@ -200,10 +283,8 @@ TEST_F(StemWaveformTest, StemOverlayScaleLiftsTheLoudestStemToTheMix) {
     EXPECT_FLOAT_EQ(1.0f, mixxx::stemOverlayScale(200, 0));
 }
 
-// WaveformRendererStem draws each stem at heightFactor * peak * scale, and
-// WaveformRendererRGB draws a file with no stems at heightFactor * all. The
-// two heights must be the same, otherwise the owner reads a stem track at
-// another size than the same music in a normal file.
+// WaveformRendererStem draws heightFactor * peak * scale and
+// WaveformRendererRGB draws heightFactor * all. Both must give one height.
 TEST_F(StemWaveformTest, StemStripReachesTheHeightOfTheNormalWaveform) {
     // One strip of the measured values: the mix reaches 250 and the four
     // stems reach 100, 75, 50 and 25.
@@ -238,59 +319,15 @@ TEST_F(StemWaveformTest, StemStripReachesTheHeightOfTheNormalWaveform) {
 }
 
 // The whole conversion pipeline, with the real ffmpeg and the real MP4Box.
-// The AAC encode and the mux must keep the level of every stream.
+// The encode and the mux must keep the level of every stream.
 TEST_F(StemWaveformTest, ConvertedStemFileKeepsTheLevelOfTheSource) {
     if (muxerPathOrEmpty().isEmpty()) {
         GTEST_SKIP() << "MP4Box is not installed";
     }
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
-
+    const QString stemFilePath = makeStemFile(dir.path());
     const QString sourceFilePath = dir.filePath(QStringLiteral("tone.wav"));
-    ASSERT_TRUE(writeToneWav(sourceFilePath, kMixAmplitude, kFrameCount));
-    TrackPointer pSource = Track::newTemporary(sourceFilePath);
-    pSource->setAudioProperties(mixxx::audio::ChannelCount::stereo(),
-            mixxx::audio::SampleRate(kSampleRate),
-            mixxx::audio::Bitrate(),
-            mixxx::Duration::fromSeconds(1));
-
-    const QDir stemDir(dir.filePath(QStringLiteral("stems")));
-    ASSERT_TRUE(QDir().mkpath(stemDir.absolutePath()));
-    const QStringList stemNames{QStringLiteral("drums"),
-            QStringLiteral("bass"),
-            QStringLiteral("other"),
-            QStringLiteral("vocals")};
-    for (int stemIdx = 0; stemIdx < stemNames.size(); ++stemIdx) {
-        ASSERT_TRUE(writeToneWav(stemDir.absoluteFilePath(
-                                         stemNames.at(stemIdx) +
-                                         QStringLiteral(".wav")),
-                kMixAmplitude * kStemAmplitudeRatio[stemIdx],
-                kFrameCount));
-    }
-
-    const QString separatorScript =
-            getTestDir().filePath(QStringLiteral("stems/fake_separator.sh"));
-    mixxx::StemConversionSettings settings;
-    settings.setSeparatorCommand(
-            QStringLiteral("/bin/sh \"%1\" from $MODEL $OUTPUT_DIR \"$INPUT\" \"%2\"")
-                    .arg(separatorScript, stemDir.absolutePath()));
-    settings.setModel(QStringLiteral("testmodel"));
-    settings.setEncoderCommand(QString());
-    settings.setMuxerPath(muxerPathOrEmpty());
-    settings.setOutputMode(mixxx::StemOutputMode::CustomDirectory);
-    settings.setOutputDirectory(dir.path());
-
-    mixxx::StemConversionJob job(settings, pSource);
-    QSignalSpy spy(&job, &mixxx::StemConversionJob::finished);
-    job.start();
-    ASSERT_TRUE(spy.count() == 1 || spy.wait(120000));
-    ASSERT_EQ(mixxx::StemConversionJob::State::Succeeded, job.state())
-            << job.errorMessage().toStdString();
-
-    const QString stemFilePath = dir.filePath(QStringLiteral("tone.stem.mp4"));
-    ASSERT_TRUE(QFile::exists(stemFilePath));
-    ASSERT_TRUE(SoundSourceProxy::isFileTypeSupported(QStringLiteral("stem.mp4")) ||
-            SoundSourceProxy::registerProviders());
 
     const WaveformPeaks sourcePeaks = analyzeFile(
             sourceFilePath, mixxx::audio::ChannelCount::stereo());
@@ -303,4 +340,27 @@ TEST_F(StemWaveformTest, ConvertedStemFileKeepsTheLevelOfTheSource) {
     // The stem bands hold one part alone, thus they are much smaller.
     EXPECT_NEAR(stemPeaks.all * kStemAmplitudeRatio[0], stemPeaks.stems[0], 4);
     EXPECT_LT(stemPeaks.loudestStem(), stemPeaks.all / 2);
+}
+
+// libebur128 reads more than two channels as a surround signal. Without a
+// mix down it drops the vocals and gives other a weight of 1.41.
+TEST_F(StemWaveformTest, ReplayGainOfAStemFileIsTheReplayGainOfTheSource) {
+    if (muxerPathOrEmpty().isEmpty()) {
+        GTEST_SKIP() << "MP4Box is not installed";
+    }
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const QString stemFilePath = makeStemFile(dir.path());
+    const QString sourceFilePath = dir.filePath(QStringLiteral("tone.wav"));
+
+    const double sourceRatio = replayGainOfFile(
+            sourceFilePath, mixxx::audio::ChannelCount::stereo());
+    const double stemRatio = replayGainOfFile(
+            stemFilePath, mixxx::audio::ChannelCount::stem());
+
+    ASSERT_GT(sourceRatio, 0.0);
+    ASSERT_GT(stemRatio, 0.0);
+    const double dbOff = 20.0 * std::log10(stemRatio / sourceRatio);
+    EXPECT_LT(std::abs(dbOff), 0.5) << "the stem file gets a ReplayGain that "
+                                    << "is " << dbOff << " dB off the source";
 }
