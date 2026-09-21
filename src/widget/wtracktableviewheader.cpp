@@ -138,13 +138,16 @@ void HeaderViewState::restoreState(WTrackTableViewHeader* pHeaders, bool restore
     }
 
     // Now restore
+    int skippedColumns = 0;
     for (int vi = 0; vi < max_columns; ++vi) {
         const mixxx::library::HeaderViewState::HeaderState& header =
                 m_view_state.header_state(vi);
         const int li = header.logical_index();
 
         if (li < 0 || li >= pHeaders->count()) {
-            qWarning() << "Header view: skipping restore for invalid column index" << li;
+            // The saved state names a column that this model does not have.
+            // That is normal, thus count the columns and log one line.
+            ++skippedColumns;
             continue;
         }
 
@@ -161,6 +164,10 @@ void HeaderViewState::restoreState(WTrackTableViewHeader* pHeaders, bool restore
         if (from != -1) {
             pHeaders->moveSection(from, vi);
         }
+    }
+    if (skippedColumns > 0) {
+        qDebug() << "Header view: the saved state has" << skippedColumns
+                 << "columns that this view does not have";
     }
     if (!restoreCommonState && m_view_state.sort_indicator_shown()) {
         pHeaders->setSortIndicator(
