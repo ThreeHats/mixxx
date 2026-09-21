@@ -10,7 +10,11 @@
 namespace mixxx {
 namespace osc {
 
-/// Builds one OSC message. liblo does the wire format; the transport is a
+/// The longest datagram that the module reads. Its own messages are far
+/// shorter, thus a bigger one is a mistake or an attack.
+constexpr int kMaxDatagramSize = 8192;
+
+/// Builds one OSC message. liblo makes the wire format. The transport is a
 /// `QUdpSocket`, thus the bind address and the event loop stay with Qt.
 class Message {
   public:
@@ -24,7 +28,6 @@ class Message {
     void addInt32(qint32 value);
     void addInt64(qint64 value);
     void addFloat(float value);
-    void addDouble(double value);
     void addString(const QString& value);
 
     /// The message with its address, ready for one datagram. The result is
@@ -41,8 +44,9 @@ struct IncomingMessage {
     QString types;
     QVector<QVariant> args;
 
-    /// The first argument as a number, or `fallback` when there is none.
-    double firstNumber(double fallback) const;
+    /// The first argument as a number. Returns false when there is none, when
+    /// its type carries no number, or when the number is not finite.
+    bool firstNumber(double* pValue) const;
 };
 
 /// Read a datagram. Returns false when it holds no OSC message.

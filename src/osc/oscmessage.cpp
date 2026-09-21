@@ -2,6 +2,18 @@
 
 #include <cstring>
 
+namespace {
+
+/// Mixxx compiles with -ffast-math, thus `std::isfinite` can be optimized
+/// away. The bit pattern answers without the floating point unit.
+bool isFiniteNumber(double value) {
+    quint64 bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return ((bits >> 52) & 0x7FF) != 0x7FF;
+}
+
+} // namespace
+
 namespace mixxx {
 namespace osc {
 
@@ -49,12 +61,6 @@ void Message::addFloat(float value) {
     }
 }
 
-void Message::addDouble(double value) {
-    if (m_message) {
-        lo_message_add_double(m_message, value);
-    }
-}
-
 void Message::addString(const QString& value) {
     if (m_message) {
         lo_message_add_string(m_message, value.toUtf8().constData());
@@ -82,18 +88,33 @@ QByteArray Message::serialise(const QString& path) const {
     return datagram;
 }
 
-double IncomingMessage::firstNumber(double fallback) const {
+bool IncomingMessage::firstNumber(double* pValue) const {
     if (args.isEmpty()) {
-        return fallback;
+        return false;
     }
-    bool ok = false;
-    const double value = args.first().toDouble(&ok);
-    return ok ? value : fallback;
+    const QVariant& arg = args.first();
+    // Only a numeric type gives a number. Text that looks like a number does
+    // not, because a control is not a text field.
+    switch (arg.userType()) {
+    case QMetaType::Int:
+    case QMetaType::LongLong:
+    case QMetaType::Double:
+        break;
+    default:
+        return false;
+    }
+    const double value = arg.toDouble();
+    if (!isFiniteNumber(value)) {
+        return false;
+    }
+    *pValue = value;
+    return true;
 }
 
 bool parseMessage(const QByteArray& datagram, IncomingMessage* pMessage) {
-    if (datagram.isEmpty() || datagram.at(0) != '/') {
-        // A bundle starts with `#bundle`. This module reads plain messages.
+    // A bundle starts with `#bundle`. This module reads plain messages.
+    if (datagram.isEmpty() || datagram.size() > kMaxDatagramSize ||
+            datagram.at(0) != '/') {
         return false;
     }
     // liblo reads the datagram in place, thus it needs a copy it may change.
@@ -114,6 +135,10 @@ bool parseMessage(const QByteArray& datagram, IncomingMessage* pMessage) {
     lo_arg** argv = lo_message_get_argv(message);
     pMessage->types = pTypes ? QString::fromLatin1(pTypes) : QString();
     pMessage->args.clear();
+    if (!pMessage->types.isEmpty() && argv == nullptr) {
+        lo_message_free(message);
+        return false;
+    }
     for (int i = 0; i < pMessage->types.size(); i++) {
         switch (pMessage->types.at(i).toLatin1()) {
         case 'i':
@@ -139,6 +164,7 @@ bool parseMessage(const QByteArray& datagram, IncomingMessage* pMessage) {
             pMessage->args.append(QVariant(0.0));
             break;
         default:
+            // A blob, a time tag, a MIDI message or nil carries no number.
             pMessage->args.append(QVariant());
             break;
         }

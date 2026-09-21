@@ -22,6 +22,8 @@ const ConfigKey kTargetsKey(kConfigGroup, QStringLiteral("Targets"));
 const ConfigKey kSnapshotKey(kConfigGroup, QStringLiteral("SnapshotIntervalSeconds"));
 const ConfigKey kAllowAllKey(kConfigGroup, QStringLiteral("AllowAllControls"));
 const ConfigKey kAllowedKeysKey(kConfigGroup, QStringLiteral("AllowedKeys"));
+const ConfigKey kAllowAnyHostKey(kConfigGroup, QStringLiteral("AllowRequestFromAnyHost"));
+const ConfigKey kSamplerBeatsKey(kConfigGroup, QStringLiteral("SamplerBeats"));
 
 } // namespace
 
@@ -37,6 +39,31 @@ QString Target::toString() const {
 
 QString deckGroupToken() {
     return kDeckToken;
+}
+
+bool groupSendsBeats(const QString& group, bool includeSamplers) {
+    if (group.startsWith(QStringLiteral("[Channel"))) {
+        return true;
+    }
+    return includeSamplers && group.startsWith(QStringLiteral("[Sampler"));
+}
+
+bool isTrustedSource(const Target& source, const QList<Target>& targets, bool allowAnyHost) {
+    if (!source.isValid()) {
+        return false;
+    }
+    if (allowAnyHost) {
+        return true;
+    }
+    if (source.host.isLoopback()) {
+        return true;
+    }
+    for (const Target& target : targets) {
+        if (target.host == source.host) {
+            return true;
+        }
+    }
+    return false;
 }
 
 QList<Target> parseTargets(const QString& text) {
@@ -221,6 +248,11 @@ QString Config::publishFilePath(const UserSettingsPointer& pConfig) {
 }
 
 // static
+bool Config::samplerBeatsEnabled(const UserSettingsPointer& pConfig) {
+    return pConfig && pConfig->getValue<bool>(kSamplerBeatsKey, false);
+}
+
+// static
 Config Config::load(const UserSettingsPointer& pConfig) {
     Config config;
     config.enabled = pConfig->getValue<bool>(kEnabledKey, false);
@@ -230,6 +262,8 @@ Config Config::load(const UserSettingsPointer& pConfig) {
     config.targets = parseTargets(pConfig->getValue(kTargetsKey, QString()));
     config.snapshotIntervalSeconds = std::max(0, pConfig->getValue<int>(kSnapshotKey, 10));
     config.allowAllControls = pConfig->getValue<bool>(kAllowAllKey, false);
+    config.allowRequestFromAnyHost = pConfig->getValue<bool>(kAllowAnyHostKey, false);
+    config.samplerBeats = samplerBeatsEnabled(pConfig);
     const QString allowedKeys = pConfig->getValue(kAllowedKeysKey, QString()).trimmed();
     config.allowedKeys = allowedKeys.isEmpty()
             ? defaultAllowedKeys()
@@ -238,6 +272,10 @@ Config Config::load(const UserSettingsPointer& pConfig) {
         key = key.trimmed();
     }
 
+    if (pConfig->getSettingsPath().isEmpty()) {
+        config.publishRules = parsePublishRules(defaultPublishRulesText(), nullptr);
+        return config;
+    }
     const QString path = publishFilePath(pConfig);
     QFile file(path);
     if (!file.exists()) {
@@ -271,6 +309,7 @@ void Config::save(const UserSettingsPointer& pConfig) const {
     pConfig->setValue(kTargetsKey, targetsToString(targets));
     pConfig->setValue(kSnapshotKey, snapshotIntervalSeconds);
     pConfig->setValue(kAllowAllKey, allowAllControls);
+    pConfig->setValue(kAllowAnyHostKey, allowRequestFromAnyHost);
 }
 
 } // namespace osc

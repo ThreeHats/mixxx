@@ -5303,7 +5303,10 @@ if(OSC)
   if(BUILD_TESTING)
     target_sources(
       mixxx-test
-      PRIVATE src/test/osc_test.cpp src/test/oscbeatcontrol_test.cpp
+      PRIVATE
+        src/test/osc_test.cpp
+        src/test/oscbeatcontrol_test.cpp
+        src/test/osccontroller_test.cpp
     )
     target_link_libraries(mixxx-test PRIVATE lo::lo)
   endif()

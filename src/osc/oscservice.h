@@ -30,7 +30,7 @@ struct TrackInfo {
 
 /// Sends the state of Mixxx as OSC and takes OSC commands back. It lives on a
 /// thread of its own with a Qt event loop. Each method here runs on that
-/// thread; `Controller` moves the calls of the main thread over.
+/// thread. `Controller` moves the calls of the main thread over.
 class Service : public QObject {
     Q_OBJECT
 
@@ -53,6 +53,11 @@ class Service : public QObject {
     /// for port 0.
     quint16 boundPort() const;
 
+    /// The readers that the module sends to. A test reads it.
+    int subscriberCount() const {
+        return m_subscribers.size();
+    }
+
   private slots:
     void slotDatagramReady();
     void slotPump();
@@ -69,6 +74,7 @@ class Service : public QObject {
     struct Subscriber {
         Target target;
         qint64 expiresMs = 0;
+        qint64 lastSnapshotMs = 0;
     };
 
     void buildPublishEntries(const Config& config, int deckCount);
@@ -87,9 +93,11 @@ class Service : public QObject {
     void addSubscriber(const Target& target);
     void removeSubscriber(const Target& target);
     void expireSubscribers();
-    QList<Target> allTargets() const;
+    /// Builds `m_allTargets` again from the settings and the readers.
+    void rebuildTargets();
     void send(const QList<Target>& targets, const QString& path, const Message& message);
     qint64 nowMs() const;
+    void warnOnce(const QString& text);
 
     std::unique_ptr<QUdpSocket> m_pSocket;
     std::unique_ptr<QTimer> m_pPumpTimer;
@@ -98,10 +106,12 @@ class Service : public QObject {
     QHash<QString, TrackInfo> m_trackInfo;
     QList<Target> m_targets;
     QList<Subscriber> m_subscribers;
+    QList<Target> m_allTargets;
     ControlFilter m_filter;
-    std::vector<std::unique_ptr<ControlProxy>> m_writeProxyStore;
     QHash<ConfigKey, ControlProxy*> m_writeProxies;
     QElapsedTimer m_clock;
+    qint64 m_lastWarningMs;
+    bool m_allowRequestFromAnyHost;
     bool m_running;
 };
 

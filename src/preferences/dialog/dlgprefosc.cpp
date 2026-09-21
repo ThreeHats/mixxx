@@ -29,6 +29,7 @@ void DlgPrefOsc::slotUpdate() {
     LineEditTargets->setText(mixxx::osc::targetsToString(config.targets));
     SpinBoxSnapshot->setValue(config.snapshotIntervalSeconds);
     CheckBoxAllowAll->setChecked(config.allowAllControls);
+    CheckBoxAllowAnyHost->setChecked(config.allowRequestFromAnyHost);
 }
 
 void DlgPrefOsc::slotApply() {
@@ -39,6 +40,7 @@ void DlgPrefOsc::slotApply() {
     config.targets = mixxx::osc::parseTargets(LineEditTargets->text());
     config.snapshotIntervalSeconds = SpinBoxSnapshot->value();
     config.allowAllControls = CheckBoxAllowAll->isChecked();
+    config.allowRequestFromAnyHost = CheckBoxAllowAnyHost->isChecked();
     config.save(m_pConfig);
     ControlObject::set(kReloadKey, 1.0);
 }
@@ -50,4 +52,5 @@ void DlgPrefOsc::slotResetToDefaults() {
     LineEditTargets->clear();
     SpinBoxSnapshot->setValue(10);
     CheckBoxAllowAll->setChecked(false);
+    CheckBoxAllowAnyHost->setChecked(false);
 }

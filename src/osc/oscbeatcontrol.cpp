@@ -4,8 +4,9 @@
 #include <cmath>
 
 #include "control/controlproxy.h"
-#include "engine/engine.h"
+#include "engine/enginebuffer.h"
 #include "moc_oscbeatcontrol.cpp"
+#include "osc/oscconfig.h"
 #include "track/track.h"
 #include "util/performancetimer.h"
 #include "waveform/visualplayposition.h"
@@ -13,6 +14,7 @@
 namespace {
 
 const QString kAppGroup = QStringLiteral("[App]");
+const QString kMainGroup = QStringLiteral("[Master]");
 
 /// A rate below this is a stop, a scratch backwards or a rewind. The beat of
 /// such a deck is no clock, thus the engine reports none.
@@ -31,11 +33,16 @@ namespace osc {
 
 BeatControl::BeatControl(const QString& group, UserSettingsPointer pConfig)
         : EngineControl(group, pConfig),
-          m_pSampleRate(std::make_unique<ControlProxy>(
+          m_pSampleRate(make_parented<ControlProxy>(
                   kAppGroup, QStringLiteral("samplerate"), this)),
+          m_pMainDelay(make_parented<ControlProxy>(
+                  kMainGroup, QStringLiteral("delay"), this)),
+          m_sendsBeats(groupSendsBeats(group, Config::samplerBeatsEnabled(pConfig))),
           m_prevBeatPosition(mixxx::audio::kInvalidFramePos),
           m_nextBeatPosition(mixxx::audio::kInvalidFramePos),
           m_lastReportedBeatPosition(mixxx::audio::kInvalidFramePos),
+          m_lastPosition(mixxx::audio::kInvalidFramePos),
+          m_beatIndex(0),
           m_seq(0) {
     BeatFeed::writeGroup(&m_groupName, group);
 }
@@ -55,41 +62,81 @@ void BeatControl::trackBeatsUpdated(mixxx::BeatsPointer pBeats) {
     m_prevBeatPosition = mixxx::audio::kInvalidFramePos;
     m_nextBeatPosition = mixxx::audio::kInvalidFramePos;
     m_lastReportedBeatPosition = mixxx::audio::kInvalidFramePos;
+    m_lastPosition = mixxx::audio::kInvalidFramePos;
+    m_beatIterator.reset();
+    m_beatIndex = 0;
     m_seq = 0;
 }
 
-// static
-qint64 BeatControl::bufferDacStampNs() {
+qint64 BeatControl::outputStampNs() const {
     PerformanceTimer callbackEntry;
     double entryToDacSecs = 0.0;
     VisualPlayPosition::getCallbackEntryToDacSecs(&callbackEntry, &entryToDacSecs);
     if (!callbackEntry.running()) {
         return 0;
     }
+    // The main delay of the mixer runs after the engine, thus it moves the
+    // sound later than the buffer.
+    const double mainDelaySecs = std::max(0.0, m_pMainDelay->get()) / 1000.0;
     const qint64 entryNs = monotonicNowNs() - callbackEntry.elapsed().toIntegerNanos();
-    return entryNs + static_cast<qint64>(std::llround(entryToDacSecs * 1e9));
+    return entryNs + static_cast<qint64>(std::llround((entryToDacSecs + mainDelaySecs) * 1e9));
+}
+
+double BeatControl::bufferFrames(std::size_t bufferSize) {
+    const EngineBuffer* pBuffer = getEngineBuffer();
+    const int channelCount = pBuffer
+            ? static_cast<int>(pBuffer->getChannelCount())
+            : static_cast<int>(mixxx::kEngineChannelOutputCount);
+    if (channelCount <= 0) {
+        return 0;
+    }
+    return static_cast<double>(bufferSize) / channelCount;
+}
+
+qint32 BeatControl::beatIndex(
+        const mixxx::BeatsPointer& pBeats, mixxx::audio::FramePos position) {
+    if (m_beatIterator) {
+        if (**m_beatIterator == position) {
+            return m_beatIndex;
+        }
+        mixxx::Beats::ConstIterator next = *m_beatIterator;
+        ++next;
+        if (*next == position) {
+            m_beatIterator = next;
+            return ++m_beatIndex;
+        }
+    }
+    const mixxx::Beats::ConstIterator it = pBeats->iteratorFrom(position);
+    m_beatIterator = it;
+    m_beatIndex = static_cast<qint32>(it - pBeats->cfirstmarker());
+    return m_beatIndex;
 }
 
 void BeatControl::process(const double rate,
         mixxx::audio::FramePos currentPosition,
         const std::size_t bufferSize) {
-    if (!BeatFeed::enabled()) {
-        return;
-    }
-    const mixxx::BeatsPointer pBeats = m_pBeats;
-    if (!pBeats || !currentPosition.isValid() || rate < kMinRate) {
-        return;
-    }
-    const double sampleRate = m_pSampleRate->get();
-    if (sampleRate <= 0) {
+    if (!m_sendsBeats || !BeatFeed::enabled() || !currentPosition.isValid()) {
         return;
     }
 
-    // `currentPosition` is the end of the buffer that the engine has just
-    // made, and `rate` is the track frames that one output frame carries.
-    const double bufferFrames = static_cast<double>(bufferSize) /
-            mixxx::kEngineChannelOutputCount;
-    const double framesAdvanced = rate * bufferFrames;
+    const mixxx::audio::FramePos previousPosition = m_lastPosition;
+    m_lastPosition = currentPosition;
+    if (!previousPosition.isValid() || currentPosition < previousPosition) {
+        // A loop wrap, a seek or reverse play moved the deck backwards. The
+        // beat that it reported last can come again.
+        m_lastReportedBeatPosition = mixxx::audio::kInvalidFramePos;
+    }
+
+    const mixxx::BeatsPointer pBeats = m_pBeats;
+    const double sampleRate = m_pSampleRate->get();
+    const double frames = bufferFrames(bufferSize);
+    if (!pBeats || rate < kMinRate || sampleRate <= 0 || frames <= 0) {
+        return;
+    }
+
+    // `currentPosition` is the end of the buffer that the engine made, and
+    // `rate` is the track frames that one output frame carries.
+    const double framesAdvanced = rate * frames;
 
     if (!m_prevBeatPosition.isValid() || !m_nextBeatPosition.isValid() ||
             currentPosition >= m_nextBeatPosition ||
@@ -106,26 +153,24 @@ void BeatControl::process(const double rate,
 
     const double framesSinceBeat = currentPosition - m_prevBeatPosition;
     m_lastReportedBeatPosition = m_prevBeatPosition;
+    // A seek or a scratch can put the beat outside of the buffer. Its instant
+    // is then unknown, thus the deck waits for the next beat.
     if (framesSinceBeat < 0 || framesSinceBeat > framesAdvanced) {
-        // A seek, a loop or a scratch put the beat outside of the buffer that
-        // the engine has just made, thus its instant is unknown. Wait for the
-        // next beat.
         return;
     }
 
-    const qint64 dacStampNs = bufferDacStampNs();
-    if (dacStampNs == 0) {
+    const qint64 stampNs = outputStampNs();
+    if (stampNs == 0) {
         return;
     }
-    const double bufferSecs = bufferFrames / sampleRate;
+    const double bufferSecs = frames / sampleRate;
     const double intoBufferSecs = (1.0 - framesSinceBeat / framesAdvanced) * bufferSecs;
     const double beatSecs = (m_nextBeatPosition - m_prevBeatPosition) / rate / sampleRate;
 
     BeatEvent event;
     event.group = m_groupName;
-    event.stampNs = dacStampNs + static_cast<qint64>(std::llround(intoBufferSecs * 1e9));
-    event.trackBeat = static_cast<qint32>(
-            pBeats->iteratorFrom(m_prevBeatPosition) - pBeats->cfirstmarker());
+    event.stampNs = stampNs + static_cast<qint64>(std::llround(intoBufferSecs * 1e9));
+    event.trackBeat = beatIndex(pBeats, m_prevBeatPosition);
     event.seq = ++m_seq;
     event.bpm = beatSecs > 0 ? static_cast<float>(60.0 / beatSecs) : 0.0f;
     BeatFeed::push(event);

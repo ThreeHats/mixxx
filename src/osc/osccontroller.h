@@ -7,7 +7,7 @@
 #include "track/track_decl.h"
 
 class ControlPushButton;
-class PlayerManager;
+class PlayerManagerInterface;
 class QThread;
 
 namespace mixxx {
@@ -22,7 +22,7 @@ class Controller : public QObject {
 
   public:
     Controller(UserSettingsPointer pConfig,
-            PlayerManager* pPlayerManager,
+            PlayerManagerInterface* pPlayerManager,
             QObject* pParent = nullptr);
     ~Controller() override;
 
@@ -40,7 +40,7 @@ class Controller : public QObject {
     void sendTrackInfo(const QString& group, const TrackPointer& pTrack);
 
     UserSettingsPointer m_pConfig;
-    PlayerManager* m_pPlayerManager;
+    PlayerManagerInterface* m_pPlayerManager;
     std::unique_ptr<QThread> m_pThread;
     Service* m_pService;
     std::unique_ptr<ControlPushButton> m_pEnabledControl;

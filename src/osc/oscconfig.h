@@ -54,6 +54,13 @@ struct Config {
     /// example `hotcue_*_activate`.
     QStringList allowedKeys;
     QList<PublishRule> publishRules;
+    /// True answers a state request from any host. False answers the loopback
+    /// and the targets only. A snapshot is about 70 datagrams and the source
+    /// address of a request can be false, thus an open server can flood
+    /// another computer.
+    bool allowRequestFromAnyHost = false;
+    /// True lets a sampler report its beats too.
+    bool samplerBeats = false;
 
     /// Read the settings and the publish list. Writes the publish list with
     /// its defaults when the file is not there yet.
@@ -63,7 +70,25 @@ struct Config {
 
     /// The path of the publish list.
     static QString publishFilePath(const UserSettingsPointer& pConfig);
+
+    /// The sampler setting alone. The engine reads it while it builds a deck,
+    /// long before the service starts.
+    static bool samplerBeatsEnabled(const UserSettingsPointer& pConfig);
 };
+
+/// True when a group reports its beats. A deck always does, a sampler only on
+/// request, and a preview deck never, because it plays to the headphones.
+bool groupSendsBeats(const QString& group, bool includeSamplers);
+
+/// True when the module answers a state request from this host.
+bool isTrustedSource(const Target& source, const QList<Target>& targets, bool allowAnyHost);
+
+/// The readers that state requests may add. It bounds the traffic that one
+/// stranger can start.
+constexpr int kMaxSubscribers = 8;
+
+/// The shortest time between two snapshots for one reader, in milliseconds.
+constexpr int kSnapshotRequestIntervalMs = 1000;
 
 /// `127.0.0.1:9001, [::1]:9002` gives two targets. A part that does not parse
 /// is dropped.

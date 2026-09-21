@@ -61,6 +61,16 @@
         </property>
        </widget>
       </item>
+      <item row="3" column="0" colspan="2">
+       <widget class="QCheckBox" name="CheckBoxAllowAnyHost">
+        <property name="text">
+         <string>Answer a state request from any host</string>
+        </property>
+        <property name="toolTip">
+         <string>Without this, only this computer and the targets can ask for the state.</string>
+        </property>
+       </widget>
+      </item>
       <item row="2" column="0" colspan="2">
        <widget class="QCheckBox" name="CheckBoxAllowAll">
         <property name="text">

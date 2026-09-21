@@ -20,8 +20,8 @@ struct BeatEvent {
     /// The place of the beat in the beat grid of the track. Beat 0 is the
     /// anchor beat of the grid.
     qint32 trackBeat;
-    /// Counts the beats that this deck put in the queue. It tells a reader
-    /// that a beat was dropped.
+    /// Counts the beats that this deck put in the queue since it took its
+    /// beat grid. It tells a reader that a beat was dropped.
     qint32 seq;
     /// The beat rate that the listener hears, in beats per minute.
     float bpm;

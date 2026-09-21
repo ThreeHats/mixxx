@@ -7,8 +7,8 @@
 
 namespace {
 
-/// Two seconds of beats at 200 beats per minute on four decks, thus a reader
-/// that stops for a moment loses nothing.
+/// Five seconds of beats at 200 beats per minute on four decks. A short stop
+/// of the reader loses nothing.
 constexpr int kQueueSize = 64;
 
 FIFO<mixxx::osc::BeatEvent> s_queue(kQueueSize);

@@ -19,7 +19,7 @@ namespace mixxx {
 namespace osc {
 
 Controller::Controller(UserSettingsPointer pConfig,
-        PlayerManager* pPlayerManager,
+        PlayerManagerInterface* pPlayerManager,
         QObject* pParent)
         : QObject(pParent),
           m_pConfig(pConfig),
@@ -50,7 +50,7 @@ Controller::Controller(UserSettingsPointer pConfig,
 
     if (m_pPlayerManager) {
         connect(m_pPlayerManager,
-                &PlayerManager::numberOfDecksChanged,
+                &PlayerManagerInterface::numberOfDecksChanged,
                 this,
                 &Controller::slotNumberOfDecksChanged);
     }
@@ -85,6 +85,9 @@ void Controller::slotEnabledChanged(double value) {
 
 void Controller::slotReloadTriggered(double value) {
     if (value > 0) {
+        // The control is a mailbox. Clear it, else the next Apply finds it
+        // already set and sends no change.
+        m_pReloadControl->set(0.0);
         reload();
     }
 }

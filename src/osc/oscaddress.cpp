@@ -24,10 +24,6 @@ QString groupToPart(const QString& group) {
 namespace mixxx {
 namespace osc {
 
-QString addressRoot() {
-    return kRoot;
-}
-
 bool isValidAddressPart(const QString& part) {
     if (part.isEmpty()) {
         return false;

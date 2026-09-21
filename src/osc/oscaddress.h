@@ -9,9 +9,6 @@
 namespace mixxx {
 namespace osc {
 
-/// The first part of each address that this module sends or accepts.
-QString addressRoot();
-
 /// True when the text is safe in one part of an OSC address.
 bool isValidAddressPart(const QString& part);
 

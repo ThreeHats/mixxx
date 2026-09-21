@@ -1,11 +1,12 @@
 #pragma once
 
 #include <array>
-#include <memory>
+#include <optional>
 
 #include "engine/controls/enginecontrol.h"
 #include "osc/oscbeatfeed.h"
 #include "track/beats.h"
+#include "util/parented_ptr.h"
 
 class ControlProxy;
 
@@ -28,17 +29,30 @@ class BeatControl : public EngineControl {
     void trackBeatsUpdated(mixxx::BeatsPointer pBeats) override;
 
   private:
-    /// When the first frame of the current buffer reaches the sound card, in
+    /// When the first frame of the current buffer leaves the outputs, in
     /// CLOCK_MONOTONIC nanoseconds. 0 means that no time is known.
-    static qint64 bufferDacStampNs();
+    qint64 outputStampNs() const;
+
+    /// The place of a beat in the grid. It steps a cached iterator, thus a
+    /// grid with many tempo markers needs no walk on each beat.
+    qint32 beatIndex(const mixxx::BeatsPointer& pBeats, mixxx::audio::FramePos position);
+
+    /// The frames that one buffer of `bufferSize` samples carries. A stem
+    /// deck has more than two channels.
+    double bufferFrames(std::size_t bufferSize);
 
     mixxx::BeatsPointer m_pBeats;
-    std::unique_ptr<ControlProxy> m_pSampleRate;
+    parented_ptr<ControlProxy> m_pSampleRate;
+    parented_ptr<ControlProxy> m_pMainDelay;
     std::array<char, kBeatGroupSize> m_groupName;
+    bool m_sendsBeats;
 
     mixxx::audio::FramePos m_prevBeatPosition;
     mixxx::audio::FramePos m_nextBeatPosition;
     mixxx::audio::FramePos m_lastReportedBeatPosition;
+    mixxx::audio::FramePos m_lastPosition;
+    std::optional<mixxx::Beats::ConstIterator> m_beatIterator;
+    qint32 m_beatIndex;
     qint32 m_seq;
 };
 

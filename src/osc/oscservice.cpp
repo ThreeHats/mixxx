@@ -14,9 +14,8 @@ namespace {
 
 const mixxx::Logger kLogger("OscService");
 
-/// The pump takes the beats out of the engine queue and sends the values that
-/// the rate limit held back. A short period keeps a beat message near its
-/// instant; the instant itself is in the message and does not move.
+/// The pump empties the beat queue and sends what the rate limit held back.
+/// The instant of a beat is in its message, thus this period adds no error.
 constexpr int kPumpIntervalMs = 5;
 
 /// A reader that asks for the state keeps it for this time. It must ask again
@@ -24,6 +23,10 @@ constexpr int kPumpIntervalMs = 5;
 constexpr int kSubscriptionMs = 60000;
 
 constexpr int kMaxBeatsPerPump = 16;
+
+/// The shortest time between two warnings about a message that came in. It
+/// keeps a flood of bad messages out of the log.
+constexpr int kWarningIntervalMs = 5000;
 
 const QString kBeatName = QStringLiteral("beat");
 const QString kKeyTextName = QStringLiteral("key_text");
@@ -55,6 +58,8 @@ namespace osc {
 
 Service::Service(QObject* pParent)
         : QObject(pParent),
+          m_lastWarningMs(0),
+          m_allowRequestFromAnyHost(false),
           m_running(false) {
     m_clock.start();
 }
@@ -77,11 +82,12 @@ void Service::stop() {
     m_pPumpTimer.reset();
     m_pSnapshotTimer.reset();
     m_publishEntries.clear();
+    qDeleteAll(m_writeProxies);
     m_writeProxies.clear();
-    m_writeProxyStore.clear();
     m_pSocket.reset();
     m_subscribers.clear();
     m_targets.clear();
+    m_allTargets.clear();
 }
 
 void Service::applyConfig(const Config& config, int deckCount) {
@@ -108,6 +114,8 @@ void Service::applyConfig(const Config& config, int deckCount) {
             &Service::slotDatagramReady);
 
     m_targets = config.targets;
+    m_allowRequestFromAnyHost = config.allowRequestFromAnyHost;
+    rebuildTargets();
     m_filter.setAllowAll(config.allowAllControls);
     m_filter.setAllowedKeys(config.allowedKeys);
     buildPublishEntries(config, deckCount);
@@ -117,6 +125,7 @@ void Service::applyConfig(const Config& config, int deckCount) {
     m_running = true;
 
     m_pPumpTimer = std::make_unique<QTimer>();
+    m_pPumpTimer->setTimerType(Qt::PreciseTimer);
     connect(m_pPumpTimer.get(), &QTimer::timeout, this, &Service::slotPump);
     m_pPumpTimer->start(kPumpIntervalMs);
 
@@ -170,7 +179,7 @@ void Service::onControlChanged(PublishEntry* pEntry, double value) {
 }
 
 void Service::sendControl(const PublishEntry& entry, double value) {
-    sendControlTo(allTargets(), entry, value);
+    sendControlTo(m_allTargets, entry, value);
 }
 
 int Service::sendControlTo(const QList<Target>& targets,
@@ -197,7 +206,7 @@ int Service::sendControlTo(const QList<Target>& targets,
 void Service::setTrackInfo(const QString& group, const TrackInfo& info) {
     m_trackInfo.insert(group, info);
     if (m_running) {
-        sendTrackInfoTo(allTargets(), group, info);
+        sendTrackInfoTo(m_allTargets, group, info);
     }
 }
 
@@ -246,25 +255,35 @@ void Service::send(const QList<Target>& targets, const QString& path, const Mess
     }
 }
 
-QList<Target> Service::allTargets() const {
-    QList<Target> targets = m_targets;
+void Service::rebuildTargets() {
+    m_allTargets = m_targets;
     for (const Subscriber& subscriber : m_subscribers) {
-        if (!targets.contains(subscriber.target)) {
-            targets.append(subscriber.target);
+        if (!m_allTargets.contains(subscriber.target)) {
+            m_allTargets.append(subscriber.target);
         }
     }
-    return targets;
 }
 
 void Service::addSubscriber(const Target& target) {
-    const qint64 expires = nowMs() + kSubscriptionMs;
+    const qint64 now = nowMs();
+    const qint64 expires = now + kSubscriptionMs;
     for (Subscriber& subscriber : m_subscribers) {
         if (subscriber.target == target) {
             subscriber.expiresMs = expires;
+            if (now - subscriber.lastSnapshotMs >= kSnapshotRequestIntervalMs) {
+                subscriber.lastSnapshotMs = now;
+                sendSnapshotTo({target});
+            }
             return;
         }
     }
-    m_subscribers.append(Subscriber{target, expires});
+    expireSubscribers();
+    if (m_subscribers.size() >= kMaxSubscribers) {
+        warnOnce(QStringLiteral("no room for another reader: ") + target.toString());
+        return;
+    }
+    m_subscribers.append(Subscriber{target, expires, now});
+    rebuildTargets();
     kLogger.debug() << "a reader asked for the state:" << target.toString();
     sendSnapshotTo({target});
 }
@@ -273,6 +292,7 @@ void Service::removeSubscriber(const Target& target) {
     for (int i = 0; i < m_subscribers.size(); i++) {
         if (m_subscribers.at(i).target == target) {
             m_subscribers.removeAt(i);
+            rebuildTargets();
             return;
         }
     }
@@ -280,11 +300,25 @@ void Service::removeSubscriber(const Target& target) {
 
 void Service::expireSubscribers() {
     const qint64 now = nowMs();
+    bool changed = false;
     for (int i = m_subscribers.size() - 1; i >= 0; i--) {
         if (m_subscribers.at(i).expiresMs <= now) {
             m_subscribers.removeAt(i);
+            changed = true;
         }
     }
+    if (changed) {
+        rebuildTargets();
+    }
+}
+
+void Service::warnOnce(const QString& text) {
+    const qint64 now = nowMs();
+    if (now - m_lastWarningMs < kWarningIntervalMs) {
+        return;
+    }
+    m_lastWarningMs = now;
+    kLogger.warning() << text;
 }
 
 void Service::slotDatagramReady() {
@@ -310,30 +344,34 @@ void Service::slotDatagramReady() {
 }
 
 void Service::handleMessage(const IncomingMessage& message, const Target& source) {
+    const bool isRequest = message.path == kSnapshotPath ||
+            message.path == kSubscribePath || message.path == kUnsubscribePath;
+    if (isRequest && !isTrustedSource(source, m_targets, m_allowRequestFromAnyHost)) {
+        // A state request answers with about 70 datagrams, thus a stranger
+        // with a false source address could flood another computer.
+        warnOnce(QStringLiteral("a state request from a host that is not "
+                                "trusted: ") +
+                source.toString());
+        return;
+    }
+
+    // A reader that listens on another port than the one it sends from names
+    // that port in the message.
+    Target target = source;
+    double port = 0;
+    if (message.firstNumber(&port) && port > 0 && port <= 65535) {
+        target.port = static_cast<quint16>(port);
+    }
+
     if (message.path == kSnapshotPath) {
-        sendSnapshotTo(source.isValid() ? QList<Target>{source} : allTargets());
+        sendSnapshotTo({target});
         return;
     }
     if (message.path == kSubscribePath) {
-        if (!source.isValid()) {
-            return;
-        }
-        Target target = source;
-        // A reader that listens on another port than the one it sends from
-        // names that port in the message.
-        const double port = message.firstNumber(0);
-        if (port > 0 && port <= 65535) {
-            target.port = static_cast<quint16>(port);
-        }
         addSubscriber(target);
         return;
     }
     if (message.path == kUnsubscribePath) {
-        Target target = source;
-        const double port = message.firstNumber(0);
-        if (port > 0 && port <= 65535) {
-            target.port = static_cast<quint16>(port);
-        }
         removeSubscriber(target);
         return;
     }
@@ -349,8 +387,10 @@ void Service::handleControlWrite(const IncomingMessage& message) {
         kLogger.warning() << "the allow list holds back" << message.path;
         return;
     }
-    if (message.args.isEmpty()) {
-        kLogger.warning() << "no value in" << message.path;
+    double value = 0;
+    if (!message.firstNumber(&value)) {
+        warnOnce(QStringLiteral("no number in ") + message.path +
+                QStringLiteral(" of type ") + message.types);
         return;
     }
     ControlProxy* pProxy = m_writeProxies.value(key, nullptr);
@@ -358,14 +398,13 @@ void Service::handleControlWrite(const IncomingMessage& message) {
         auto pOwned = std::make_unique<ControlProxy>(
                 key, nullptr, ControlFlag::NoWarnIfMissing);
         if (!pOwned->valid()) {
-            kLogger.warning() << "no such control:" << message.path;
+            warnOnce(QStringLiteral("no such control: ") + message.path);
             return;
         }
-        pProxy = pOwned.get();
-        m_writeProxyStore.push_back(std::move(pOwned));
+        pProxy = pOwned.release();
         m_writeProxies.insert(key, pProxy);
     }
-    pProxy->set(message.firstNumber(0));
+    pProxy->set(value);
 }
 
 void Service::slotPump() {
@@ -374,9 +413,11 @@ void Service::slotPump() {
     }
     const qint64 now = nowMs();
 
+    expireSubscribers();
+
     BeatEvent events[kMaxBeatsPerPump];
     const int count = BeatFeed::pop(events, kMaxBeatsPerPump);
-    const QList<Target> targets = allTargets();
+    const QList<Target>& targets = m_allTargets;
     for (int i = 0; i < count; i++) {
         const BeatEvent& event = events[i];
         Message message;
@@ -393,13 +434,11 @@ void Service::slotPump() {
             sendControlTo(targets, *pEntry, value);
         }
     }
-
-    expireSubscribers();
 }
 
 void Service::slotSnapshot() {
     if (m_running) {
-        sendSnapshotTo(allTargets());
+        sendSnapshotTo(m_allTargets);
     }
 }
 

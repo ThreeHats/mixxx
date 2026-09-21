@@ -25,9 +25,6 @@ class RateLimiter {
     bool hasPending() const {
         return m_hasPending;
     }
-    int minIntervalMs() const {
-        return m_minIntervalMs;
-    }
 
   private:
     int m_minIntervalMs;
