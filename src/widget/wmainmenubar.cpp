@@ -11,7 +11,6 @@
 #include "controllers/keyboard/keyboardeventfilter.h"
 #include "defs_urls.h"
 #include "moc_wmainmenubar.cpp"
-#include "util/assert.h"
 #include "util/cmdlineargs.h"
 #include "util/desktophelper.h"
 #include "util/experiment.h"
@@ -384,17 +383,6 @@ void WMainMenuBar::initialize() {
     createVisibilityControl(pViewMaximizeLibrary,
             ConfigKey(kSkinGroup, QStringLiteral("show_maximized_library")));
     pViewMenu->addAction(pViewMaximizeLibrary);
-    m_pViewMaximizeLibrary = pViewMaximizeLibrary;
-    connect(this,
-            &WMainMenuBar::internalOnNewSkinLoaded,
-            this,
-            &WMainMenuBar::slotReconnectLibraryWindowControl);
-#ifdef __LINUX__
-    connect(this,
-            &WMainMenuBar::internalFullScreenStateChange,
-            this,
-            &WMainMenuBar::slotReconnectLibraryWindowControl);
-#endif
 
     QString libraryWindowTitle = tr("Library in a Window of its Own");
     QString libraryWindowText =
@@ -411,6 +399,8 @@ void WMainMenuBar::initialize() {
     createVisibilityControl(pViewLibraryWindow,
             ConfigKey(kSkinGroup, QStringLiteral("show_library_window")));
     pViewMenu->addAction(pViewLibraryWindow);
+    // The maximized page of a skin is empty while the library is out.
+    connect(pViewLibraryWindow, &QAction::toggled, pViewMaximizeLibrary, &QAction::setDisabled);
 
     pViewMenu->addSeparator();
 
@@ -972,26 +962,6 @@ void WMainMenuBar::slotDeveloperDebugger(bool toggle) {
 
 void WMainMenuBar::slotVisitUrl(const QUrl& url) {
     mixxx::DesktopHelper::openUrl(url);
-}
-
-void WMainMenuBar::slotReconnectLibraryWindowControl() {
-    m_pLibraryWindowControl.reset(new ControlProxy(
-            ConfigKey(kSkinGroup, QStringLiteral("show_library_window")),
-            this,
-            ControlFlag::NoAssertIfMissing));
-    m_pLibraryWindowControl->connectValueChanged(
-            this, &WMainMenuBar::slotLibraryWindowStateChanged);
-    slotLibraryWindowStateChanged();
-}
-
-void WMainMenuBar::slotLibraryWindowStateChanged() {
-    VERIFY_OR_DEBUG_ASSERT(m_pViewMaximizeLibrary && m_pLibraryWindowControl) {
-        return;
-    }
-    // The maximized page of a skin holds the place of the library. That page
-    // shows almost nothing while the library is in a window of its own.
-    m_pViewMaximizeLibrary->setEnabled(m_pLibraryWindowControl->valid() &&
-            !m_pLibraryWindowControl->toBool());
 }
 
 void WMainMenuBar::createVisibilityControl(QAction* pAction,
