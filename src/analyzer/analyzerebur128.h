@@ -25,4 +25,5 @@ class AnalyzerEbur128 : public Analyzer {
   private:
     ReplayGainSettings m_rgSettings;
     ebur128_state* m_pState;
+    mixxx::audio::ChannelCount m_channelCount;
 };
