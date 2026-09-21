@@ -773,9 +773,6 @@ int Beats::beatInBarAt(audio::FramePos position) const {
 }
 
 BeatsPointer Beats::withBarPhase(const std::optional<BarPhase>& barPhase) const {
-    if (barPhase == m_barPhase) {
-        return clonePointer();
-    }
     return BeatsPointer(new Beats(m_markers,
             m_lastMarkerPosition,
             m_lastMarkerBpm,

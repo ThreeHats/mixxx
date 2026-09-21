@@ -425,6 +425,7 @@ void Service::slotPump() {
         message.addInt32(event.trackBeat);
         message.addFloat(event.bpm);
         message.addInt32(event.seq);
+        message.addInt32(event.beatInBar);
         send(targets, pathForGroupMessage(BeatFeed::readGroup(event), kBeatName), message);
     }
 

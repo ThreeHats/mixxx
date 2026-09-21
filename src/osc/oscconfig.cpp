@@ -188,6 +188,7 @@ QString defaultPublishRulesText() {
             "[ChannelN] file_bpm\n"
             "[ChannelN] rate 50\n"
             "[ChannelN] beat_distance 100\n"
+            "[ChannelN] beat_in_bar\n"
             "[ChannelN] volume 30\n"
             "[ChannelN] mute\n"
             "[ChannelN] pregain 30\n"

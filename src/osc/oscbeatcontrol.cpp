@@ -171,6 +171,7 @@ void BeatControl::process(const double rate,
     event.group = m_groupName;
     event.stampNs = stampNs + static_cast<qint64>(std::llround(intoBufferSecs * 1e9));
     event.trackBeat = beatIndex(pBeats, m_prevBeatPosition);
+    event.beatInBar = static_cast<qint32>(pBeats->beatInBar(event.trackBeat));
     event.seq = ++m_seq;
     event.bpm = beatSecs > 0 ? static_cast<float>(60.0 / beatSecs) : 0.0f;
     BeatFeed::push(event);

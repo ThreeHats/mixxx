@@ -25,6 +25,9 @@ struct BeatEvent {
     qint32 seq;
     /// The beat rate that the listener hears, in beats per minute.
     float bpm;
+    /// The place of the beat in its bar, from 1 to the beats of a bar. 0
+    /// means that the beat grid of the track holds no bar phase.
+    qint32 beatInBar;
 };
 
 /// The queue that carries beats from the engine thread to the OSC thread.
