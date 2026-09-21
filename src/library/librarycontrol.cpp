@@ -12,6 +12,7 @@
 #include "control/controlpushbutton.h"
 #include "library/library.h"
 #include "library/libraryview.h"
+#include "librarywindow/librarywindowfocus.h"
 #include "mixer/playermanager.h"
 #include "moc_librarycontrol.cpp"
 #include "util/cmdlineargs.h"
@@ -23,6 +24,18 @@
 
 namespace {
 const QString kAppGroup = QStringLiteral("[App]");
+
+/// A library widget can be in the library window. Only an active window can
+/// hold the keyboard focus, thus make the window of the widget active.
+void activateWindowOf(QWidget* pWidget) {
+    QWidget* pWindow = pWidget->window();
+    if (mixxx::librarywindow::needsWindowActivation(pWindow,
+                QApplication::activeWindow(),
+                QApplication::activeModalWidget())) {
+        pWindow->raise();
+        pWindow->activateWindow();
+    }
+}
 } // namespace
 
 LoadToGroupController::LoadToGroupController(LibraryControl* pParent, const QString& group)
@@ -1007,18 +1020,21 @@ void LibraryControl::setLibraryFocus(FocusWidget newFocusWidget, Qt::FocusReason
         VERIFY_OR_DEBUG_ASSERT(m_pSearchbox) {
             return;
         }
+        activateWindowOf(m_pSearchbox);
         m_pSearchbox->setFocus(focusReason);
         return;
     case FocusWidget::Sidebar:
         VERIFY_OR_DEBUG_ASSERT(m_pSidebarWidget) {
             return;
         }
+        activateWindowOf(m_pSidebarWidget);
         m_pSidebarWidget->setFocus(focusReason);
         return;
     case FocusWidget::TracksTable:
         VERIFY_OR_DEBUG_ASSERT(m_pLibraryWidget) {
             return;
         }
+        activateWindowOf(m_pLibraryWidget);
         m_pLibraryWidget->getActiveView()->setFocus();
         return;
     case FocusWidget::None:

@@ -43,6 +43,7 @@
 #endif
 #include "library/library_prefs.h"
 #include "library/trackcollectionmanager.h"
+#include "librarywindow/librarywindowmanager.h"
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "recording/recordingmanager.h"
@@ -228,6 +229,12 @@ void MixxxMainWindow::initialize() {
     // This allows us to turn off tooltips.
     installEventFilter(m_pCoreServices->getKeyboardEventFilter().get());
 
+    // CoreServices made the [Skin] controls, thus the manager can read them.
+    m_pLibraryWindowManager = std::make_unique<LibraryWindowManager>(
+            m_pCoreServices->getSettings(),
+            this,
+            m_pCoreServices->getKeyboardEventFilter());
+
     auto pPlayerManager = m_pCoreServices->getPlayerManager();
     DEBUG_ASSERT(pPlayerManager);
     const QStringList visualGroups = pPlayerManager->getVisualPlayerGroups();
@@ -397,6 +404,7 @@ void MixxxMainWindow::initialize() {
     // million different variables the first waveform may be horribly
     // corrupted. See bug 521509 -- bkgood ?? -- vrince
     setCentralWidget(m_pCentralWidget);
+    m_pLibraryWindowManager->setSkin(m_pCentralWidget);
 
 #ifndef __APPLE__
     // Ask for permission to auto-hide the menu bar if applicable.
@@ -491,6 +499,7 @@ MixxxMainWindow::~MixxxMainWindow() {
     // delete the main widget (ie. all WBaseWidgets) to prevent KeyboardEventFilter
     // accessing dangling pointers.
     m_pCoreServices->getKeyboardEventFilter()->clearWidgets();
+    m_pLibraryWindowManager.reset();
     m_pCentralWidget = nullptr;
     QPointer<QWidget> pSkin(centralWidget());
     setCentralWidget(nullptr);
@@ -1348,6 +1357,9 @@ void MixxxMainWindow::rebootMixxxView() {
         // KeyboardEventFilter accessing dangling pointers, just in case a
         // shortcuts/tooltip update is triggered while we re/load a skin.
         m_pCoreServices->getKeyboardEventFilter()->clearWidgets();
+        if (m_pLibraryWindowManager) {
+            m_pLibraryWindowManager->clearSkin();
+        }
         m_pCentralWidget->hide();
         WaveformWidgetFactory::instance()->destroyWidgets();
         delete m_pCentralWidget;
@@ -1369,6 +1381,8 @@ void MixxxMainWindow::rebootMixxxView() {
         QMessageBox::critical(this,
                               tr("Error in skin file"),
                               tr("The selected skin cannot be loaded."));
+        // There is no skin, thus there is no library for a window of its own.
+        m_pLibraryWindowManager->setSkin(nullptr);
         m_inRebootMixxxView = false;
         // m_pWidgetParent is NULL, we can't continue.
         return;
@@ -1376,6 +1390,9 @@ void MixxxMainWindow::rebootMixxxView() {
     m_pMenuBar->setStyleSheet(m_pCentralWidget->styleSheet());
 
     setCentralWidget(m_pCentralWidget);
+    if (m_pLibraryWindowManager) {
+        m_pLibraryWindowManager->setSkin(m_pCentralWidget);
+    }
 #ifdef __LINUX__
     // don't adjustSize() on Linux as this wouldn't use the entire available area
     // to paint the new skin with X11
@@ -1468,7 +1485,9 @@ bool MixxxMainWindow::eventFilter(QObject* obj, QEvent* event) {
             DEBUG_ASSERT(!"m_toolTipsCfg value unknown");
             return true;
         }
-    } else if (event->type() == QEvent::WindowStateChange) {
+    } else if (event->type() == QEvent::WindowStateChange && obj == this) {
+        // Only the state of the main window matters here. Mixxx can have a
+        // second window, the library window.
 #ifndef __APPLE__
         if (windowState() == m_prevState) {
             // Ignore no-op. This happens if another window is raised above

@@ -59,6 +59,13 @@ class WSingletonContainer : public WWidgetGroup {
 
     void setup(const QDomNode& node, const SkinContext& context) override;
 
+    QWidget* singletonWidget() const {
+        return m_pWidget;
+    }
+
+    // Moves the singleton widget into this container.
+    void adoptSingletonWidget();
+
   public slots:
     void showEvent(QShowEvent* event) override;
 
