@@ -64,8 +64,10 @@ class RelatedTracksPanel : public QWidget {
 
     const UserSettingsPointer m_pConfig;
     Library* const m_pLibrary;
-    RelatedTracksTableModel m_model;
     parented_ptr<WTrackTableView> m_pTrackTable;
+    /// The table view owns the model, thus the view saves its column
+    /// layout before the model goes.
+    parented_ptr<RelatedTracksTableModel> m_pModel;
     parented_ptr<QLabel> m_pStatusLabel;
     parented_ptr<QRadioButton> m_pRelatedButton;
     parented_ptr<QRadioButton> m_pSuggestionsButton;

@@ -52,9 +52,6 @@ RelatedTracksPanel::RelatedTracksPanel(QWidget* pParent,
         : QWidget(pParent),
           m_pConfig(pConfig),
           m_pLibrary(pLibrary),
-          m_model(this,
-                  pLibrary->trackCollectionManager(),
-                  RelatedTracksTableModel::kPanelSettingsNamespace),
           m_modelIsLoaded(false),
           m_splitHeightPending(false) {
     setObjectName(QStringLiteral("RelatedTracksPanel"));
@@ -93,6 +90,10 @@ RelatedTracksPanel::RelatedTracksPanel(QWidget* pParent,
         m_pTrackTable->installEventFilter(pKeyboard);
     }
     pPanelLayout->addWidget(m_pTrackTable);
+
+    m_pModel = make_parented<RelatedTracksTableModel>(m_pTrackTable,
+            pLibrary->trackCollectionManager(),
+            RelatedTracksTableModel::kPanelSettingsNamespace);
 
     // A row of the panel behaves like a row of the library table. The panel
     // never takes the model of the library table: it has a view of its own.
@@ -212,14 +213,14 @@ void RelatedTracksPanel::slotModeChanged() {
 void RelatedTracksPanel::slotUpdateNeeded() {
     const DeckTrackList deckTracks = m_pDeckWatcher->deckTracks();
     if (m_pSuggestionsButton->isChecked()) {
-        m_model.selectSuggestedForDecks(deckTracks);
+        m_pModel->selectSuggestedForDecks(deckTracks);
     } else {
-        m_model.selectRelatedToDecks(deckTracks);
+        m_pModel->selectRelatedToDecks(deckTracks);
     }
     if (!m_modelIsLoaded) {
         // The columns of the two modes are the same, thus the view takes
         // the model one time only.
-        m_pTrackTable->loadTrackModel(&m_model);
+        m_pTrackTable->loadTrackModel(m_pModel);
         m_modelIsLoaded = true;
     }
     updateStatusLabel(deckTracks);
