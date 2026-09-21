@@ -31,6 +31,7 @@
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "moc_wtrackmenu.cpp"
+#include "muxic/relatedtracks/relatedtrackstablemodel.h"
 #include "muxic/relatedtracks/trackrelation.h"
 #include "muxic/relatedtracks/trackrelationstorage.h"
 #include "preferences/colorpalettesettings.h"
@@ -427,6 +428,16 @@ void WTrackMenu::createActions() {
                 &QAction::triggered,
                 this,
                 &WTrackMenu::slotShowRelatedTracks);
+
+        m_pRelateBothWaysAct = make_parented<QAction>(tr("Relate Both Ways"), this);
+        connect(m_pRelateBothWaysAct, &QAction::triggered, this, [this] {
+            setRelationsBidirectional(true);
+        });
+
+        m_pRelateOneWayAct = make_parented<QAction>(tr("Relate One Way"), this);
+        connect(m_pRelateOneWayAct, &QAction::triggered, this, [this] {
+            setRelationsBidirectional(false);
+        });
     }
 
     if (featureIsEnabled(Feature::Metadata)) {
@@ -683,6 +694,8 @@ void WTrackMenu::setupActions() {
 
     if (featureIsEnabled(Feature::RelatedTracks)) {
         addMenu(m_pRelateToMenu);
+        addAction(m_pRelateBothWaysAct);
+        addAction(m_pRelateOneWayAct);
         addAction(m_pShowRelatedTracksAct);
     }
 
@@ -1166,6 +1179,29 @@ void WTrackMenu::updateMenus() {
         }
         m_pShowRelatedTracksAct->setEnabled(trackIds.size() == 1);
         m_pRemoveRelationsAct->setEnabled(anyRelation);
+
+        // The direction of a relation only has a meaning in a view that
+        // shows one relation per row.
+        auto* pRelatedModel = dynamic_cast<muxic::RelatedTracksTableModel*>(m_pTrackModel);
+        const bool showDirection =
+                pRelatedModel && pRelatedModel->showsOneRelationPerRow();
+        bool anyOneWay = false;
+        bool anyBothWays = false;
+        if (showDirection) {
+            for (const QModelIndex& trackIndex : std::as_const(m_trackIndexList)) {
+                muxic::TrackRelation relation;
+                if (!pRelatedModel->relationForIndex(trackIndex, &relation)) {
+                    continue;
+                }
+                if (relation.isBidirectional()) {
+                    anyBothWays = true;
+                } else {
+                    anyOneWay = true;
+                }
+            }
+        }
+        m_pRelateBothWaysAct->setVisible(showDirection && anyOneWay);
+        m_pRelateOneWayAct->setVisible(showDirection && anyBothWays);
     }
 
     if (featureIsEnabled(Feature::Remove)) {
@@ -1894,6 +1930,14 @@ void WTrackMenu::relateSelectionToTrack(TrackId targetTrackId) {
         relation.setType(muxic::kDefaultTrackRelationType);
         relations.saveRelation(relation);
     }
+}
+
+void WTrackMenu::setRelationsBidirectional(bool bidirectional) {
+    auto* pRelatedModel = dynamic_cast<muxic::RelatedTracksTableModel*>(m_pTrackModel);
+    if (!pRelatedModel) {
+        return;
+    }
+    pRelatedModel->setRelationsBidirectional(m_trackIndexList, bidirectional);
 }
 
 void WTrackMenu::slotRemoveRelations() {

@@ -189,6 +189,7 @@ class WTrackMenu : public QMenu {
 
     // Related tracks
     void relateSelectionToTrack(TrackId targetTrackId);
+    void setRelationsBidirectional(bool bidirectional);
     void slotPopulateRelateToMenu();
     void slotRemoveRelations();
     void slotShowRelatedTracks();
@@ -349,6 +350,8 @@ class WTrackMenu : public QMenu {
     // Related tracks
     parented_ptr<QAction> m_pRemoveRelationsAct;
     parented_ptr<QAction> m_pShowRelatedTracksAct;
+    parented_ptr<QAction> m_pRelateBothWaysAct;
+    parented_ptr<QAction> m_pRelateOneWayAct;
 
     // BPM feature
     parented_ptr<QAction> m_pBpmLockAction;
