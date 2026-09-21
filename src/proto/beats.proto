@@ -21,11 +21,18 @@ message Bpm {
   optional Source source = 2 [ default = ANALYZER ];
 }
 
+// downbeats_offset is the grid index of the first downbeat, counted from the
+// anchor beat. An absent field means that the bar phase is unknown. The field
+// of BeatGrid has the number of upstream pull request 14835.
 message BeatMap {
   repeated Beat beat = 1;
+  optional int32 downbeats_offset = 2;
+  optional int32 beats_per_bar = 3;
 }
 
 message BeatGrid {
   optional Bpm bpm = 1;
   optional Beat first_beat = 2;
+  optional int32 downbeats_offset = 3;
+  optional int32 beats_per_bar = 4;
 }

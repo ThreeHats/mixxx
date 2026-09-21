@@ -116,8 +116,14 @@ class BpmControl : public EngineControl {
     void slotBeatsTranslateMatchAlignment(double);
     void slotToggleBpmLock(double);
     void slotBeatsUndoAdjustment(double value);
+    void slotSetDownbeat(double);
+    void slotDownbeatEarlier(double);
+    void slotDownbeatLater(double);
 
   private:
+    /// Move the bar phase of the loaded track by `beats` beats.
+    void shiftBarPhase(int beats);
+
     SyncMode getSyncMode() const {
         return syncModeFromDouble(m_pSyncMode.get());
     }
@@ -165,6 +171,11 @@ class BpmControl : public EngineControl {
     std::unique_ptr<ControlPushButton> m_pBeatsDouble;
 
     std::unique_ptr<ControlPushButton> m_pBpmLock;
+
+    // Buttons that set and move the bar phase of the beat grid.
+    std::unique_ptr<ControlPushButton> m_pSetDownbeat;
+    std::unique_ptr<ControlPushButton> m_pDownbeatEarlier;
+    std::unique_ptr<ControlPushButton> m_pDownbeatLater;
 
     // The current effective BPM of the engine
     std::unique_ptr<ControlLinPotmeter> m_pEngineBpm;

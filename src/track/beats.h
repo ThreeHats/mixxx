@@ -4,6 +4,8 @@
 #include <QList>
 #include <QString>
 #include <QVector>
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <optional>
 
@@ -50,6 +52,64 @@ inline bool operator==(const BeatMarker& lhs, const BeatMarker& rhs) {
 }
 
 inline bool operator!=(const BeatMarker& lhs, const BeatMarker& rhs) {
+    return !(lhs == rhs);
+}
+
+/// The bar phase of a beat grid: which beat of the grid is beat one, and how
+/// many beats a bar has. A grid index counts from the anchor beat, which is
+/// the beat at the first marker.
+class BarPhase {
+  public:
+    static constexpr int kDefaultBeatsPerBar = 4;
+
+    explicit BarPhase(int downbeatOffset, int beatsPerBar = kDefaultBeatsPerBar)
+            : m_beatsPerBar(std::max(1, beatsPerBar)) {
+        m_downbeatOffset = static_cast<int>(
+                ((static_cast<long long>(downbeatOffset) % m_beatsPerBar) +
+                        m_beatsPerBar) %
+                m_beatsPerBar);
+    }
+
+    /// The grid index of the first downbeat, from 0 to `beatsPerBar() - 1`.
+    int downbeatOffset() const {
+        return m_downbeatOffset;
+    }
+
+    int beatsPerBar() const {
+        return m_beatsPerBar;
+    }
+
+    /// The place of the beat with the grid index `beatIndex` in its bar,
+    /// from 1 to `beatsPerBar()`.
+    int beatInBar(int beatIndex) const {
+        const long long offset = static_cast<long long>(beatIndex) - m_downbeatOffset;
+        return static_cast<int>(((offset % m_beatsPerBar) + m_beatsPerBar) %
+                       m_beatsPerBar) +
+                1;
+    }
+
+    bool isDownbeat(int beatIndex) const {
+        return beatInBar(beatIndex) == 1;
+    }
+
+    /// The phase after a change of the beat length by `bpmScaleFactor`. A
+    /// factor that is no whole number of beats rounds to the nearest beat.
+    BarPhase scaled(double bpmScaleFactor) const {
+        return BarPhase(static_cast<int>(std::lround(m_downbeatOffset * bpmScaleFactor)),
+                m_beatsPerBar);
+    }
+
+  private:
+    int m_downbeatOffset;
+    int m_beatsPerBar;
+};
+
+inline bool operator==(const BarPhase& lhs, const BarPhase& rhs) {
+    return lhs.downbeatOffset() == rhs.downbeatOffset() &&
+            lhs.beatsPerBar() == rhs.beatsPerBar();
+}
+
+inline bool operator!=(const BarPhase& lhs, const BarPhase& rhs) {
     return !(lhs == rhs);
 }
 
@@ -157,11 +217,13 @@ class Beats : private std::enable_shared_from_this<Beats> {
             mixxx::audio::FramePos lastMarkerPosition,
             mixxx::Bpm lastMarkerBpm,
             mixxx::audio::SampleRate sampleRate,
-            const QString& subVersion)
+            const QString& subVersion,
+            const std::optional<BarPhase>& barPhase = std::nullopt)
             : m_markers(std::move(markers)),
               m_lastMarkerPosition(lastMarkerPosition),
               m_lastMarkerBpm(lastMarkerBpm),
               m_sampleRate(sampleRate),
+              m_barPhase(barPhase),
               m_subVersion(subVersion) {
         DEBUG_ASSERT(m_lastMarkerPosition.isValid());
         DEBUG_ASSERT(!m_lastMarkerPosition.isFractional());
@@ -172,12 +234,14 @@ class Beats : private std::enable_shared_from_this<Beats> {
     Beats(mixxx::audio::FramePos lastMarkerPosition,
             mixxx::Bpm lastMarkerBpm,
             mixxx::audio::SampleRate sampleRate,
-            const QString& subVersion)
+            const QString& subVersion,
+            const std::optional<BarPhase>& barPhase = std::nullopt)
             : Beats(std::vector<BeatMarker>(),
                       lastMarkerPosition,
                       lastMarkerBpm,
                       sampleRate,
-                      subVersion) {
+                      subVersion,
+                      barPhase) {
     }
 
     ~Beats() = default;
@@ -216,7 +280,8 @@ class Beats : private std::enable_shared_from_this<Beats> {
     friend bool operator==(const Beats& lhs, const Beats& rhs) {
         return lhs.m_markers == rhs.m_markers &&
                 lhs.m_lastMarkerPosition == rhs.m_lastMarkerPosition &&
-                lhs.m_lastMarkerBpm == rhs.m_lastMarkerBpm && lhs.m_sampleRate &&
+                lhs.m_lastMarkerBpm == rhs.m_lastMarkerBpm &&
+                lhs.m_barPhase == rhs.m_barPhase && lhs.m_sampleRate &&
                 rhs.m_sampleRate;
     }
 
@@ -388,6 +453,31 @@ class Beats : private std::enable_shared_from_this<Beats> {
     }
 
     ////////////////////////////////////////////////////////////////////////////
+    // Bars
+    ////////////////////////////////////////////////////////////////////////////
+
+    /// The bar phase of this grid, or `nullopt` when no downbeat is known.
+    const std::optional<BarPhase>& barPhase() const {
+        return m_barPhase;
+    }
+
+    /// The grid index of `it`, counted from the anchor beat. The anchor beat
+    /// has the index 0.
+    int beatIndex(ConstIterator it) const {
+        return it - cfirstmarker();
+    }
+
+    /// The place of the beat with the grid index `beatIndex` in its bar, from
+    /// 1 to the beats of a bar. 0 means that this grid has no bar phase.
+    int beatInBar(int beatIndex) const {
+        return m_barPhase ? m_barPhase->beatInBar(beatIndex) : 0;
+    }
+
+    /// The place of the beat at or before `position` in its bar, from 1 to
+    /// the beats of a bar. 0 means that this grid has no bar phase.
+    int beatInBarAt(audio::FramePos position) const;
+
+    ////////////////////////////////////////////////////////////////////////////
     // Beat mutations
     ////////////////////////////////////////////////////////////////////////////
 
@@ -418,6 +508,26 @@ class Beats : private std::enable_shared_from_this<Beats> {
     /// failure.
     std::optional<BeatsPointer> trySetBpm(mixxx::Bpm bpm) const;
 
+    /// Give this grid another bar phase, or `nullopt` to drop the phase. No
+    /// beat moves.
+    //
+    /// Returns a pointer to the modified beats object.
+    BeatsPointer withBarPhase(const std::optional<BarPhase>& barPhase) const;
+
+    /// Make the beat nearest to `position` the first beat of a bar. The beats
+    /// of a bar stay, or become `BarPhase::kDefaultBeatsPerBar` when this grid
+    /// has no phase yet.
+    //
+    /// Returns a pointer to the modified beats object, or `nullopt` when
+    /// `position` has no beat near it.
+    std::optional<BeatsPointer> trySetDownbeatNear(audio::FramePos position) const;
+
+    /// Move the bar phase by `beats` beats.
+    //
+    /// Returns a pointer to the modified beats object, or `nullopt` when this
+    /// grid has no phase.
+    std::optional<BeatsPointer> tryShiftBarPhase(int beats) const;
+
   protected:
     /// Type tag for making public constructors of derived classes inaccessible.
     ///
@@ -442,6 +552,7 @@ class Beats : private std::enable_shared_from_this<Beats> {
     mixxx::audio::FramePos m_lastMarkerPosition;
     mixxx::Bpm m_lastMarkerBpm;
     mixxx::audio::SampleRate m_sampleRate;
+    std::optional<BarPhase> m_barPhase;
 
     // The sub-version of this beatgrid.
     const QString m_subVersion;

@@ -266,6 +266,32 @@ BpmControl::BpmControl(const QString& group,
             &BpmControl::slotBeatsTranslateMatchAlignment,
             Qt::DirectConnection);
 
+    m_pSetDownbeat = std::make_unique<ControlPushButton>(
+            ConfigKey(group, "beats_set_downbeat"));
+    connect(m_pSetDownbeat.get(),
+            &ControlObject::valueChanged,
+            this,
+            &BpmControl::slotSetDownbeat,
+            Qt::DirectConnection);
+
+    m_pDownbeatEarlier = std::make_unique<ControlPushButton>(
+            ConfigKey(group, "beats_downbeat_earlier"));
+    m_pDownbeatEarlier->setKbdRepeatable(true);
+    connect(m_pDownbeatEarlier.get(),
+            &ControlObject::valueChanged,
+            this,
+            &BpmControl::slotDownbeatEarlier,
+            Qt::DirectConnection);
+
+    m_pDownbeatLater = std::make_unique<ControlPushButton>(
+            ConfigKey(group, "beats_downbeat_later"));
+    m_pDownbeatLater->setKbdRepeatable(true);
+    connect(m_pDownbeatLater.get(),
+            &ControlObject::valueChanged,
+            this,
+            &BpmControl::slotDownbeatLater,
+            Qt::DirectConnection);
+
     m_pBpmLock = std::make_unique<ControlPushButton>(
             ConfigKey(group, "bpmlock"), false);
     m_pBpmLock->setButtonMode(mixxx::control::ButtonMode::Toggle);
@@ -1206,6 +1232,54 @@ void BpmControl::trackBpmLockChanged(bool locked) {
 
 void BpmControl::notifySeek(mixxx::audio::FramePos position) {
     updateBeatDistance(position);
+}
+
+void BpmControl::slotSetDownbeat(double v) {
+    if (v <= 0) {
+        return;
+    }
+    const TrackPointer pTrack = getEngineBuffer()->getLoadedTrack();
+    if (!pTrack) {
+        return;
+    }
+    const mixxx::BeatsPointer pBeats = pTrack->getBeats();
+    if (!pBeats) {
+        return;
+    }
+    const auto currentPosition = frameInfo().currentPosition.toLowerFrameBoundary();
+    const auto newBeats = pBeats->trySetDownbeatNear(currentPosition);
+    if (newBeats) {
+        pTrack->trySetBeats(*newBeats);
+    }
+}
+
+void BpmControl::shiftBarPhase(int beats) {
+    const TrackPointer pTrack = getEngineBuffer()->getLoadedTrack();
+    if (!pTrack) {
+        return;
+    }
+    const mixxx::BeatsPointer pBeats = pTrack->getBeats();
+    if (!pBeats) {
+        return;
+    }
+    const auto newBeats = pBeats->tryShiftBarPhase(beats);
+    if (newBeats) {
+        pTrack->trySetBeats(*newBeats);
+    }
+}
+
+void BpmControl::slotDownbeatEarlier(double v) {
+    if (v <= 0) {
+        return;
+    }
+    shiftBarPhase(-1);
+}
+
+void BpmControl::slotDownbeatLater(double v) {
+    if (v <= 0) {
+        return;
+    }
+    shiftBarPhase(1);
 }
 
 void BpmControl::slotBeatsTranslate(double v) {

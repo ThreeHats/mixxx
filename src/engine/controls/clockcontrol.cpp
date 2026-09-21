@@ -18,6 +18,7 @@ constexpr double kSignificiantRateThreshold =
 ClockControl::ClockControl(const QString& group, UserSettingsPointer pConfig)
         : EngineControl(group, pConfig),
           m_pCOBeatActive(std::make_unique<ControlObject>(ConfigKey(group, "beat_active"))),
+          m_pCOBeatInBar(std::make_unique<ControlObject>(ConfigKey(group, "beat_in_bar"))),
           m_pLoopEnabled(std::make_unique<ControlProxy>(group, "loop_enabled", this)),
           m_pLoopStartPosition(std::make_unique<ControlProxy>(group, "loop_start_position", this)),
           m_pLoopEndPosition(std::make_unique<ControlProxy>(group, "loop_end_position", this)),
@@ -26,9 +27,13 @@ ClockControl::ClockControl(const QString& group, UserSettingsPointer pConfig)
           m_prevBeatPosition(mixxx::audio::kStartFramePos),
           m_nextBeatPosition(mixxx::audio::kStartFramePos),
           m_blinkIntervalFrames(0.0),
+          m_beatInBarStartPosition(mixxx::audio::kInvalidFramePos),
+          m_beatInBarEndPosition(mixxx::audio::kInvalidFramePos),
           m_internalState(StateMachine::outsideIndicationArea) {
     m_pCOBeatActive->setReadOnly();
     m_pCOBeatActive->forceSet(0.0);
+    m_pCOBeatInBar->setReadOnly();
+    m_pCOBeatInBar->forceSet(0.0);
 }
 
 ClockControl::~ClockControl() = default;
@@ -45,7 +50,34 @@ void ClockControl::trackLoaded(TrackPointer pNewTrack) {
 void ClockControl::trackBeatsUpdated(mixxx::BeatsPointer pBeats) {
     // Clear on-beat control
     m_pCOBeatActive->forceSet(0.0);
+    m_pCOBeatInBar->forceSet(0.0);
+    m_beatInBarStartPosition = mixxx::audio::kInvalidFramePos;
+    m_beatInBarEndPosition = mixxx::audio::kInvalidFramePos;
     m_pBeats = pBeats;
+}
+
+void ClockControl::updateBeatInBar(mixxx::audio::FramePos currentPosition) {
+    const mixxx::BeatsPointer pBeats = m_pBeats;
+    if (!pBeats || !pBeats->barPhase() || !currentPosition.isValid()) {
+        m_beatInBarStartPosition = mixxx::audio::kInvalidFramePos;
+        m_beatInBarEndPosition = mixxx::audio::kInvalidFramePos;
+        if (m_pCOBeatInBar->get() != 0.0) {
+            m_pCOBeatInBar->forceSet(0.0);
+        }
+        return;
+    }
+
+    if (m_beatInBarStartPosition.isValid() && m_beatInBarEndPosition.isValid() &&
+            currentPosition >= m_beatInBarStartPosition &&
+            currentPosition < m_beatInBarEndPosition) {
+        return;
+    }
+
+    pBeats->findPrevNextBeats(currentPosition,
+            &m_beatInBarStartPosition,
+            &m_beatInBarEndPosition,
+            false);
+    m_pCOBeatInBar->forceSet(pBeats->beatInBarAt(currentPosition));
 }
 
 void ClockControl::updateIndicators(const double dRate,
@@ -56,6 +88,8 @@ void ClockControl::updateIndicators(const double dRate,
     *  1.0 --> Forward playing, set at the beat and set back to 0.0 at 20% of beat distance
     *  2.0 --> Reverse playing, set at the beat and set back to 0.0 at -20% of beat distance
     */
+
+    updateBeatInBar(currentPosition);
 
     // No position change since last indicator update (e.g. deck stopped) -> No indicator update needed
     // The kSignificiantRateThreshold condition ensures an immediate indicator update, when the play/cue button is pressed

@@ -27,7 +27,13 @@ class ClockControl: public EngineControl {
     void trackBeatsUpdated(mixxx::BeatsPointer pBeats) override;
 
   private:
+    /// Keep `beat_in_bar` on the beat that plays. It searches the grid only
+    /// when the play position leaves the beat that it reported last, thus a
+    /// seek and a loop wrap update it and a normal buffer does not.
+    void updateBeatInBar(mixxx::audio::FramePos currentPosition);
+
     std::unique_ptr<ControlObject> m_pCOBeatActive;
+    std::unique_ptr<ControlObject> m_pCOBeatInBar;
 
     // ControlObjects that come from LoopingControl
     std::unique_ptr<ControlProxy> m_pLoopEnabled;
@@ -41,6 +47,10 @@ class ClockControl: public EngineControl {
     mixxx::audio::FramePos m_prevBeatPosition;
     mixxx::audio::FramePos m_nextBeatPosition;
     mixxx::audio::FrameDiff_t m_blinkIntervalFrames;
+
+    // The beat that `beat_in_bar` reports, as the range that it covers.
+    mixxx::audio::FramePos m_beatInBarStartPosition;
+    mixxx::audio::FramePos m_beatInBarEndPosition;
 
     enum class StateMachine : int {
         afterBeatDirectionChanged =
