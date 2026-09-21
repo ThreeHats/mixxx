@@ -1381,6 +1381,8 @@ void MixxxMainWindow::rebootMixxxView() {
         QMessageBox::critical(this,
                               tr("Error in skin file"),
                               tr("The selected skin cannot be loaded."));
+        // There is no skin, thus there is no library for a window of its own.
+        m_pLibraryWindowManager->setSkin(nullptr);
         m_inRebootMixxxView = false;
         // m_pWidgetParent is NULL, we can't continue.
         return;
@@ -1483,7 +1485,9 @@ bool MixxxMainWindow::eventFilter(QObject* obj, QEvent* event) {
             DEBUG_ASSERT(!"m_toolTipsCfg value unknown");
             return true;
         }
-    } else if (event->type() == QEvent::WindowStateChange) {
+    } else if (event->type() == QEvent::WindowStateChange && obj == this) {
+        // Only the state of the main window matters here. Mixxx can have a
+        // second window, the library window.
 #ifndef __APPLE__
         if (windowState() == m_prevState) {
             // Ignore no-op. This happens if another window is raised above
