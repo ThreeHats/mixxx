@@ -2943,6 +2943,8 @@ if(BUILD_TESTING)
     src/test/learningutilstest.cpp
     src/test/libraryscannertest.cpp
     src/test/librarytest.cpp
+    src/test/librarywindowfocustest.cpp
+    src/test/librarywindowmanagertest.cpp
     src/test/looping_control_test.cpp
     src/test/main.cpp
     src/test/mathutiltest.cpp
