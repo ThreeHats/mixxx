@@ -7,6 +7,7 @@
 #include <QHelpEvent>
 #include <QScrollBar>
 #include <QToolTip>
+#include <QWheelEvent>
 
 #include "moc_wlibrarytableview.cpp"
 #include "util/math.h"
@@ -306,6 +307,29 @@ void WLibraryTableView::focusInEvent(QFocusEvent* event) {
             scrollTo(currentIndex());
         }
     }
+}
+
+void WLibraryTableView::wheelEvent(QWheelEvent* pEvent) {
+    const QPoint angleDelta = pEvent->angleDelta();
+    if (!pEvent->modifiers().testFlag(Qt::ShiftModifier) ||
+            qAbs(angleDelta.y()) <= qAbs(angleDelta.x())) {
+        QTableView::wheelEvent(pEvent);
+        return;
+    }
+    // Qt gives a wheel with Shift to the vertical bar, which then moves by a
+    // page. Make a wheel to the side of it, and give it to the other bar.
+    QWheelEvent sideEvent(pEvent->position(),
+            pEvent->globalPosition(),
+            QPoint(pEvent->pixelDelta().y(), 0),
+            QPoint(angleDelta.y(), 0),
+            pEvent->buttons(),
+            pEvent->modifiers() & ~Qt::ShiftModifier,
+            pEvent->phase(),
+            pEvent->inverted(),
+            pEvent->source(),
+            pEvent->pointingDevice());
+    QApplication::sendEvent(horizontalScrollBar(), &sideEvent);
+    pEvent->accept();
 }
 
 QModelIndex WLibraryTableView::moveCursor(CursorAction cursorAction,

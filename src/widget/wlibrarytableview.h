@@ -13,6 +13,7 @@
 #endif
 
 class QFont;
+class QWheelEvent;
 
 class WLibraryTableView : public QTableView, public virtual LibraryView {
     Q_OBJECT
@@ -77,6 +78,8 @@ class WLibraryTableView : public QTableView, public virtual LibraryView {
 
   protected:
     void focusInEvent(QFocusEvent* event) override;
+    /// Shift and the wheel move the table to the side.
+    void wheelEvent(QWheelEvent* pEvent) override;
     QModelIndex moveCursor(CursorAction cursorAction,
             Qt::KeyboardModifiers modifiers) override;
     virtual QString getModelStateKey() const = 0;
