@@ -6,7 +6,7 @@
 #include "library/dao/trackschema.h"
 #include "library/library_prefs.h"
 #include "moc_columncache.cpp"
-#include "muxic/trackmeta.h"
+#include "muxic/librarycolumns/trackmeta.h"
 #include "util/db/dbconnection.h"
 
 namespace {

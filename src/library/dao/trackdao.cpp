@@ -20,7 +20,7 @@
 #include "library/library_prefs.h"
 #include "library/queryutil.h"
 #include "moc_trackdao.cpp"
-#include "muxic/trackmetadao.h"
+#include "muxic/librarycolumns/trackmetadao.h"
 #include "sources/soundsourceproxy.h"
 #include "track/beats.h"
 #include "track/globaltrackcache.h"

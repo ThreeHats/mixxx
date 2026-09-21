@@ -1,4 +1,4 @@
-#include "muxic/trackmeta.h"
+#include "muxic/librarycolumns/trackmeta.h"
 
 #include "track/replaygain.h"
 #include "util/math.h"

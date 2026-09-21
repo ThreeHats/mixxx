@@ -17,7 +17,7 @@
 #include "library/trackcollectionmanager.h"
 #include "library/treeitem.h"
 #include "moc_mixxxlibraryfeature.cpp"
-#include "muxic/librarycolumns.h"
+#include "muxic/librarycolumns/librarycolumns.h"
 #include "sources/soundsourceproxy.h"
 #include "util/dnd.h"
 #include "widget/wlibrary.h"

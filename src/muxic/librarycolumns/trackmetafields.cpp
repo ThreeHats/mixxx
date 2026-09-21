@@ -1,12 +1,12 @@
-#include "muxic/trackmetafields.h"
+#include "muxic/librarycolumns/trackmetafields.h"
 
 #include <QLabel>
 #include <QLineEdit>
 #include <QSpinBox>
 #include <QWidget>
 
-#include "muxic/trackmeta.h"
-#include "muxic/trackmetadao.h"
+#include "muxic/librarycolumns/trackmeta.h"
+#include "muxic/librarycolumns/trackmetadao.h"
 
 namespace {
 

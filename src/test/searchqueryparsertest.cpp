@@ -7,7 +7,7 @@
 #include "library/searchqueryparser.h"
 #include "library/trackcollection.h"
 #include "library/trackset/crate/crate.h"
-#include "muxic/trackmetadao.h"
+#include "muxic/librarycolumns/trackmetadao.h"
 #include "test/librarytest.h"
 #include "track/track.h"
 #include "util/assert.h"

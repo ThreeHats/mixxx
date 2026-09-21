@@ -7,7 +7,7 @@
 #include <QStringList>
 #include <optional>
 
-#include "muxic/trackmeta.h"
+#include "muxic/librarycolumns/trackmeta.h"
 #include "track/trackid.h"
 #include "util/class.h"
 #include "util/db/dbconnectionpool.h"

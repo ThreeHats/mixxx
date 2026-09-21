@@ -6,8 +6,8 @@
 
 #include "library/searchquery.h"
 #include "library/trackcollection.h"
-#include "muxic/searchfilters.h"
-#include "muxic/trackmeta.h"
+#include "muxic/librarycolumns/searchfilters.h"
+#include "muxic/librarycolumns/trackmeta.h"
 #include "track/keyutils.h"
 #include "util/assert.h"
 
@@ -91,7 +91,7 @@ SearchQueryParser::SearchQueryParser(TrackCollection* pTrackCollection, QStringL
                      << "r" << "rating"
                      << "br" << "bitrate"
                      << "id";
-    // The columns of the muxic fork, see src/muxic/trackmeta.h
+    // The columns of the muxic fork, see src/muxic/librarycolumns/trackmeta.h
     m_textFilters << QStringLiteral("tag")
                   << QStringLiteral("tags");
     m_numericFilters << QStringLiteral("en")

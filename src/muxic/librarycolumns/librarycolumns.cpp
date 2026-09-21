@@ -1,8 +1,8 @@
-#include "muxic/librarycolumns.h"
+#include "muxic/librarycolumns/librarycolumns.h"
 
 #include "library/dao/trackschema.h"
-#include "muxic/trackmeta.h"
-#include "muxic/trackmetadao.h"
+#include "muxic/librarycolumns/trackmeta.h"
+#include "muxic/librarycolumns/trackmetadao.h"
 
 namespace {
 

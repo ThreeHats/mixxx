@@ -1,8 +1,8 @@
-#include "muxic/searchfilters.h"
+#include "muxic/librarycolumns/searchfilters.h"
 
 #include "library/queryutil.h"
-#include "muxic/trackmeta.h"
-#include "muxic/trackmetadao.h"
+#include "muxic/librarycolumns/trackmeta.h"
+#include "muxic/librarycolumns/trackmetadao.h"
 #include "track/track.h"
 
 namespace {

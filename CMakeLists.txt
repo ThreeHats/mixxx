@@ -1514,12 +1514,12 @@ add_library(
   src/musicbrainz/web/coverartarchiveimagetask.cpp
   src/musicbrainz/web/coverartarchivelinkstask.cpp
   src/musicbrainz/web/musicbrainzrecordingstask.cpp
-  src/muxic/librarycolumns.cpp
-  src/muxic/searchfilters.cpp
-  src/muxic/trackmeta.cpp
-  src/muxic/trackmetadao.cpp
-  src/muxic/trackmetafields.cpp
-  src/muxic/trackmetapoller.cpp
+  src/muxic/librarycolumns/librarycolumns.cpp
+  src/muxic/librarycolumns/searchfilters.cpp
+  src/muxic/librarycolumns/trackmeta.cpp
+  src/muxic/librarycolumns/trackmetadao.cpp
+  src/muxic/librarycolumns/trackmetafields.cpp
+  src/muxic/librarycolumns/trackmetapoller.cpp
   src/muxic/relatedtracks/relatedtracksfeature.cpp
   src/muxic/relatedtracks/relatedtracksmenu.cpp
   src/muxic/relatedtracks/relatedtrackstablemodel.cpp

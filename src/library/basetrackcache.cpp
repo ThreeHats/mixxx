@@ -5,7 +5,7 @@
 #include "library/searchqueryparser.h"
 #include "library/trackcollection.h"
 #include "moc_basetrackcache.cpp"
-#include "muxic/trackmeta.h"
+#include "muxic/librarycolumns/trackmeta.h"
 #include "track/globaltrackcache.h"
 #include "track/keyutils.h"
 #include "track/track.h"

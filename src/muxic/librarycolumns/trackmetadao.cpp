@@ -1,4 +1,4 @@
-#include "muxic/trackmetadao.h"
+#include "muxic/librarycolumns/trackmetadao.h"
 
 #include <QDateTime>
 #include <QSqlQuery>
@@ -9,7 +9,7 @@
 #include "library/queryutil.h"
 #include "library/relocatedtrack.h"
 #include "moc_trackmetadao.cpp"
-#include "muxic/trackmetapoller.h"
+#include "muxic/librarycolumns/trackmetapoller.h"
 #include "util/assert.h"
 #include "util/logger.h"
 

@@ -13,7 +13,7 @@
 #include "library/library_prefs.h"
 #include "library/trackmodel.h"
 #include "moc_dlgtrackinfo.cpp"
-#include "muxic/trackmetafields.h"
+#include "muxic/librarycolumns/trackmetafields.h"
 #include "preferences/colorpalettesettings.h"
 #include "sources/soundsourceproxy.h"
 #include "track/beatutils.h"

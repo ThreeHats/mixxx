@@ -1,11 +1,11 @@
-#include "muxic/trackmetapoller.h"
+#include "muxic/librarycolumns/trackmetapoller.h"
 
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QTimer>
 
 #include "moc_trackmetapoller.cpp"
-#include "muxic/trackmeta.h"
+#include "muxic/librarycolumns/trackmeta.h"
 #include "util/assert.h"
 #include "util/db/dbconnectionpooled.h"
 #include "util/db/dbconnectionpooler.h"

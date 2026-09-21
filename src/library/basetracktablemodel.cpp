@@ -26,7 +26,7 @@
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "moc_basetracktablemodel.cpp"
-#include "muxic/librarycolumns.h"
+#include "muxic/librarycolumns/librarycolumns.h"
 #include "track/keyutils.h"
 #include "track/track.h"
 #include "util/assert.h"

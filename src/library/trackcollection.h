@@ -13,7 +13,7 @@
 #include "library/dao/playlistdao.h"
 #include "library/dao/trackdao.h"
 #include "library/trackset/crate/cratestorage.h"
-#include "muxic/trackmetadao.h"
+#include "muxic/librarycolumns/trackmetadao.h"
 #include "muxic/relatedtracks/trackrelationstorage.h"
 #include "preferences/usersettings.h"
 #include "util/thread_affinity.h"

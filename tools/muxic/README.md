@@ -19,6 +19,32 @@ no pull request, no issue and no comment to `mixxxdj/mixxx`.
 Each feature branch starts from `muxic` and merges back into it. To take a
 new upstream version, merge `upstream/main` into `muxic`.
 
+## Where the fork code is
+
+| Feature | Code | Page |
+|---|---|---|
+| Stem conversion | `src/stems/`, `src/preferences/dialog/dlgprefstems.*` | `docs/stems.md` |
+| Related tracks | `src/muxic/relatedtracks/` | `docs/related-tracks.md` |
+| Floating library window | `src/librarywindow/` | `docs/library-window.md` |
+| OSC state server | `src/osc/`, `src/preferences/dialog/dlgprefosc.*` | `docs/osc.md` |
+| More library columns | `src/muxic/librarycolumns/` | `docs/library-columns.md` |
+
+`src/stems/`, `src/osc/` and `src/librarywindow/` are subsystems with a CMake
+option or a place of their own in the Mixxx layout. `src/muxic/` holds the
+library data that only this fork has, one directory for each feature. The
+tests are in `src/test/`. To see each line that the fork changed in an
+upstream file, run `git diff upstream/main...muxic --stat`.
+
+The fork tables are `muxic_track_relations` and `muxic_track_meta`. The
+muxic hub reads and writes the two tables. Each page gives the exact schema
+and the rules for the hub.
+
+## Tests
+
+`TrackMetadataExportTest.keepWithespaceKey` fails in the container on
+upstream `main` too. A controller script test leaves a key notation in a
+global state, and this test reads it. All other tests must pass.
+
 ## Build
 
 The build runs in a container, thus the host needs only Docker. The image is
