@@ -191,6 +191,7 @@ TEST(OscBeatFeedTest, CarriesABeatFromTheEngineThread) {
     sent.trackBeat = -3;
     sent.seq = 7;
     sent.bpm = 128.5f;
+    sent.beatInBar = 2;
     BeatFeed::push(sent);
 
     BeatEvent received[4];
@@ -200,6 +201,7 @@ TEST(OscBeatFeedTest, CarriesABeatFromTheEngineThread) {
     EXPECT_EQ(-3, received[0].trackBeat);
     EXPECT_EQ(7, received[0].seq);
     EXPECT_FLOAT_EQ(128.5f, received[0].bpm);
+    EXPECT_EQ(2, received[0].beatInBar);
     EXPECT_EQ(0, BeatFeed::pop(received, 4));
 }
 
@@ -497,16 +499,18 @@ TEST_F(OscServiceTest, ABeatOfTheEngineReachesTheReader) {
     event.trackBeat = 12;
     event.seq = 5;
     event.bpm = 174.0f;
+    event.beatInBar = 3;
     BeatFeed::push(event);
 
     ASSERT_TRUE(waitForPath(QStringLiteral("/mixxx/Channel1/beat")));
     const IncomingMessage* pBeat = find(QStringLiteral("/mixxx/Channel1/beat"));
     ASSERT_NE(nullptr, pBeat);
-    EXPECT_QSTRING_EQ(QStringLiteral("hifi"), pBeat->types);
+    EXPECT_QSTRING_EQ(QStringLiteral("hifii"), pBeat->types);
     EXPECT_EQ(Q_INT64_C(9007199254740993), pBeat->args.at(0).toLongLong());
     EXPECT_EQ(12, pBeat->args.at(1).toInt());
     EXPECT_FLOAT_EQ(174.0f, static_cast<float>(pBeat->args.at(2).toDouble()));
     EXPECT_EQ(5, pBeat->args.at(3).toInt());
+    EXPECT_EQ(3, pBeat->args.at(4).toInt());
 }
 
 TEST_F(OscServiceTest, AnArgumentThatIsNoNumberLeavesTheControlAlone) {
