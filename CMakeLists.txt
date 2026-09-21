@@ -1514,6 +1514,7 @@ add_library(
   src/muxic/relatedtracks/relatedtracksfeature.cpp
   src/muxic/relatedtracks/relatedtrackstablemodel.cpp
   src/muxic/relatedtracks/relationsuggester.cpp
+  src/muxic/relatedtracks/relationtypedelegate.cpp
   src/muxic/relatedtracks/trackrelationstorage.cpp
   src/nativeeventhandlerwin.cpp
   src/network/jsonwebtask.cpp

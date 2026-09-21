@@ -150,6 +150,9 @@ bool TrackRelationStorage::saveRelation(const TrackRelation& relation) {
     const bool reversed = exists &&
             storedRelation.getSourceTrackId() != relation.getSourceTrackId();
     const bool bidirectional = relation.isBidirectional() || reversed;
+    // A new row and a new direction change which rows a view holds. A change
+    // of the other fields does not.
+    const bool rowsChanged = !exists || storedRelation.isBidirectional() != bidirectional;
 
     if (exists) {
         FwdSqlQuery query(m_database,
@@ -200,7 +203,11 @@ bool TrackRelationStorage::saveRelation(const TrackRelation& relation) {
         }
     }
 
-    emit relationsChanged();
+    if (rowsChanged) {
+        emit relationsChanged();
+    } else {
+        emit relationUpdated(relation.getSourceTrackId(), relation.getTargetTrackId());
+    }
     return true;
 }
 
@@ -320,6 +327,21 @@ QList<TrackRelation> TrackRelationStorage::readRelationsFrom(TrackId trackId) co
         relations.append(relation);
     }
     return relations;
+}
+
+QStringList TrackRelationStorage::readRelationTypes() const {
+    QStringList types;
+    FwdSqlQuery query(m_database,
+            QStringLiteral("SELECT DISTINCT %1 FROM %2 WHERE %1<>'' ORDER BY %1")
+                    .arg(TRACKRELATIONSTABLE_RELATION_TYPE,
+                            QStringLiteral(TRACK_RELATIONS_TABLE)));
+    VERIFY_OR_DEBUG_ASSERT(query.execPrepared()) {
+        return types;
+    }
+    while (query.next()) {
+        types.append(query.fieldValue(DbFieldIndex(0)).toString());
+    }
+    return types;
 }
 
 uint TrackRelationStorage::countRelations() const {

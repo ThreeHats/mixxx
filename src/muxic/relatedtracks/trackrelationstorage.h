@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QSet>
 #include <QSqlDatabase>
+#include <QStringList>
 
 #include "muxic/relatedtracks/trackrelation.h"
 #include "track/trackid.h"
@@ -65,6 +66,9 @@ class TrackRelationStorage : public QObject, public virtual /*implements*/ SqlSt
     /// The relations that lead away from the track.
     QList<TrackRelation> readRelationsFrom(TrackId trackId) const;
 
+    /// The relation types that the table holds, without the empty type.
+    QStringList readRelationTypes() const;
+
     uint countRelations() const;
     uint countRelationsOfTrack(TrackId trackId) const;
 
@@ -79,8 +83,12 @@ class TrackRelationStorage : public QObject, public virtual /*implements*/ SqlSt
     static QString formatSubselectQueryForAllRelatedTrackIds();
 
   signals:
-    /// The table changed. A view reads it again.
+    /// A row was added or removed, or a direction changed. A view reads the
+    /// table again.
     void relationsChanged();
+    /// The type, the rating or the note of one relation changed. The rows of
+    /// a view stay the same.
+    void relationUpdated(TrackId trackId1, TrackId trackId2);
 
   private:
     bool removeRelationWithoutSignal(TrackId trackId1, TrackId trackId2);

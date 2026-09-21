@@ -1,10 +1,16 @@
 #include "muxic/relatedtracks/relatedtrackstablemodel.h"
 
+#include <QTableView>
+#include <algorithm>
+
 #include "library/dao/trackschema.h"
+#include "library/starrating.h"
+#include "library/tabledelegates/stardelegate.h"
 #include "library/trackcollection.h"
 #include "library/trackcollectionmanager.h"
 #include "moc_relatedtrackstablemodel.cpp"
 #include "muxic/relatedtracks/relationsuggester.h"
+#include "muxic/relatedtracks/relationtypedelegate.h"
 #include "muxic/relatedtracks/trackrelationschema.h"
 #include "muxic/relatedtracks/trackrelationstorage.h"
 #include "track/track.h"
@@ -336,6 +342,170 @@ TrackModel::Capabilities RelatedTracksTableModel::getCapabilities() const {
         caps |= Capability::Remove;
     }
     return caps;
+}
+
+TrackRelationStorage& RelatedTracksTableModel::storage() const {
+    return m_pTrackCollectionManager->internalCollection()->trackRelations();
+}
+
+bool RelatedTracksTableModel::relationForIndex(
+        const QModelIndex& index, TrackRelation* pRelation) const {
+    if (!index.isValid() || !showsOneRelationPerRow()) {
+        return false;
+    }
+    const TrackId trackId = getTrackId(index);
+    if (!trackId.isValid()) {
+        return false;
+    }
+    return storage().readRelation(m_referenceTrackId, trackId, pRelation);
+}
+
+QVariant RelatedTracksTableModel::data(const QModelIndex& index, int role) const {
+    if (index.isValid() &&
+            index.column() == fieldIndex(kRelationRatingColumn) &&
+            (role == Qt::DisplayRole || role == Qt::EditRole)) {
+        const QVariant value = rawValue(index);
+        if (value.isNull()) {
+            return QVariant();
+        }
+        return QVariant::fromValue(StarRating(value.toInt()));
+    }
+    return TrackSetTableModel::data(index, role);
+}
+
+bool RelatedTracksTableModel::writeRelationColumn(
+        const QModelIndex& index, const QVariant& value) {
+    TrackRelation relation;
+    if (!relationForIndex(index, &relation)) {
+        return false;
+    }
+    const int column = index.column();
+    QVariant storedValue;
+    if (column == fieldIndex(kRelationTypeColumn)) {
+        relation.setType(value.toString().trimmed());
+        storedValue = relation.getType();
+    } else if (column == fieldIndex(kRelationRatingColumn)) {
+        const int stars = value.canConvert<StarRating>()
+                ? value.value<StarRating>().starCount()
+                : value.toInt();
+        relation.setRating(std::min(std::max(stars, TrackRelation::kMinRating),
+                TrackRelation::kMaxRating));
+        storedValue = relation.getRating();
+    } else {
+        relation.setNotes(value.toString());
+        storedValue = relation.getNotes();
+    }
+    if (!storage().saveRelation(relation)) {
+        return false;
+    }
+    setTableColumnValue(index.row(), column, storedValue);
+    return true;
+}
+
+bool RelatedTracksTableModel::setData(
+        const QModelIndex& index, const QVariant& value, int role) {
+    if (!index.isValid()) {
+        return false;
+    }
+    const int column = index.column();
+    if (column == fieldIndex(kRelationDirectionColumn) ||
+            column == fieldIndex(kRelationCountColumn)) {
+        return false;
+    }
+    if (column == fieldIndex(kRelationTypeColumn) ||
+            column == fieldIndex(kRelationRatingColumn) ||
+            column == fieldIndex(kRelationNotesColumn)) {
+        if (role != Qt::EditRole) {
+            return false;
+        }
+        return writeRelationColumn(index, value);
+    }
+    return TrackSetTableModel::setData(index, value, role);
+}
+
+Qt::ItemFlags RelatedTracksTableModel::flags(const QModelIndex& index) const {
+    Qt::ItemFlags itemFlags = TrackSetTableModel::flags(index);
+    if (!index.isValid()) {
+        return itemFlags;
+    }
+    const int column = index.column();
+    if (column == fieldIndex(kRelationTypeColumn) ||
+            column == fieldIndex(kRelationRatingColumn) ||
+            column == fieldIndex(kRelationNotesColumn)) {
+        if (showsOneRelationPerRow()) {
+            itemFlags |= Qt::ItemIsEditable;
+        } else {
+            itemFlags &= ~Qt::ItemIsEditable;
+        }
+    } else if (column == fieldIndex(kRelationDirectionColumn) ||
+            column == fieldIndex(kRelationCountColumn)) {
+        itemFlags &= ~Qt::ItemIsEditable;
+    }
+    return itemFlags;
+}
+
+QAbstractItemDelegate* RelatedTracksTableModel::delegateForColumn(
+        const int column, QObject* pParent) {
+    auto* pTableView = qobject_cast<QTableView*>(pParent);
+    if (pTableView) {
+        if (column == fieldIndex(kRelationRatingColumn)) {
+            return new StarDelegate(pTableView);
+        }
+        if (column == fieldIndex(kRelationTypeColumn)) {
+            return new RelationTypeDelegate(pTableView, this);
+        }
+    }
+    return TrackSetTableModel::delegateForColumn(column, pParent);
+}
+
+int RelatedTracksTableModel::setRelationsBidirectional(
+        const QModelIndexList& indices, bool bidirectional) {
+    if (!showsOneRelationPerRow()) {
+        return 0;
+    }
+    QSet<int> rows;
+    int changed = 0;
+    for (const QModelIndex& index : indices) {
+        if (!index.isValid() || rows.contains(index.row())) {
+            continue;
+        }
+        rows.insert(index.row());
+        TrackRelation relation;
+        if (!relationForIndex(index, &relation)) {
+            continue;
+        }
+        if (relation.isBidirectional() == bidirectional) {
+            continue;
+        }
+        relation.setBidirectional(bidirectional);
+        if (storage().saveRelation(relation)) {
+            ++changed;
+        }
+    }
+    return changed;
+}
+
+QStringList RelatedTracksTableModel::knownRelationTypes() const {
+    QStringList types = defaultTrackRelationTypes();
+    const QStringList storedTypes = storage().readRelationTypes();
+    for (const QString& type : storedTypes) {
+        if (!types.contains(type)) {
+            types.append(type);
+        }
+    }
+    return types;
+}
+
+QString RelatedTracksTableModel::tableColumnSortExpression(int column) const {
+    if (column == fieldIndex(kRelationRatingColumn)) {
+        return QStringLiteral("CAST(%1.%2 AS INTEGER)")
+                .arg(m_tableName, kRelationRatingColumn);
+    }
+    if (column == fieldIndex(kRelationCountColumn)) {
+        return QStringLiteral("CAST(%1.%2 AS INTEGER)")
+                .arg(m_tableName, kRelationCountColumn);
+    }
+    return TrackSetTableModel::tableColumnSortExpression(column);
 }
 
 QString RelatedTracksTableModel::modelKey(bool noSearch) const {

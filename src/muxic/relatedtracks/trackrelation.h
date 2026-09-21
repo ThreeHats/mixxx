@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QStringList>
 
 #include "track/trackid.h"
 #include "util/db/dbid.h"
@@ -16,6 +17,16 @@ class TrackRelationId : public DbId {
 // The relation type that the menu and the control write. The column holds
 // free text, thus the muxic hub can write any other type.
 const QString kDefaultTrackRelationType = QStringLiteral("mix");
+
+// The types that the editor offers. The column holds free text, thus the
+// muxic hub can write any other type.
+inline QStringList defaultTrackRelationTypes() {
+    return QStringList{kDefaultTrackRelationType,
+            QStringLiteral("harmonic_blend"),
+            QStringLiteral("energy_transition"),
+            QStringLiteral("mashup"),
+            QStringLiteral("double_drop")};
+}
 
 /// A relation between two library tracks that mix well.
 ///

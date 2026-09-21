@@ -1,9 +1,14 @@
 #pragma once
 
+#include <QStringList>
+
 #include "library/trackset/tracksettablemodel.h"
+#include "muxic/relatedtracks/trackrelation.h"
 #include "track/trackid.h"
 
 namespace muxic {
+
+class TrackRelationStorage;
 
 /// Shows the tracks that go with a reference track.
 class RelatedTracksTableModel final : public TrackSetTableModel {
@@ -42,8 +47,39 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
     Capabilities getCapabilities() const final;
     QString modelKey(bool noSearch) const override;
 
+    ///////////////////////////////////////////////////////////////////////////
+    // Editing of the relation columns
+    ///////////////////////////////////////////////////////////////////////////
+
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
+    bool setData(const QModelIndex& index,
+            const QVariant& value,
+            int role = Qt::EditRole) override;
+    Qt::ItemFlags flags(const QModelIndex& index) const override;
+    QAbstractItemDelegate* delegateForColumn(const int column, QObject* pParent) override;
+
+    /// True if the rows of this view each carry one relation.
+    bool showsOneRelationPerRow() const {
+        return m_mode == Mode::RelatedTo && m_referenceTrackId.isValid();
+    }
+
+    /// Reads the relation of the row. Returns false without a relation.
+    bool relationForIndex(const QModelIndex& index, TrackRelation* pRelation) const;
+
+    /// Sets the direction of the relations of the rows. Returns the number of
+    /// relations that changed.
+    int setRelationsBidirectional(const QModelIndexList& indices, bool bidirectional);
+
+    /// The relation types of the table and the types that the menu offers.
+    QStringList knownRelationTypes() const;
+
+  protected:
+    QString tableColumnSortExpression(int column) const override;
+
   private:
     void setRelationTable(const QString& tableName, const QString& viewQuery);
+    TrackRelationStorage& storage() const;
+    bool writeRelationColumn(const QModelIndex& index, const QVariant& value);
 
     Mode m_mode = Mode::AllRelated;
     TrackId m_referenceTrackId;
