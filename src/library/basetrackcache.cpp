@@ -715,15 +715,24 @@ int BaseTrackCache::compareColumnValues(int sortColumn,
             sortColumn == fieldIndex(ColumnCache::COLUMN_MUXIC_DANCEABILITY) ||
             sortColumn == fieldIndex(ColumnCache::COLUMN_MUXIC_LUFS) ||
             sortColumn == fieldIndex(ColumnCache::COLUMN_PLAYLISTTRACKSTABLE_POSITION)) {
-        // Sort as floats.
-        double delta = val1.toDouble() - val2.toDouble();
-
-        if (fabs(delta) < .00001) {
-            result = 0;
-        } else if (delta > 0.0) {
-            result = 1;
+        const bool muxicColumn =
+                sortColumn == fieldIndex(ColumnCache::COLUMN_MUXIC_ENERGY) ||
+                sortColumn == fieldIndex(ColumnCache::COLUMN_MUXIC_DANCEABILITY) ||
+                sortColumn == fieldIndex(ColumnCache::COLUMN_MUXIC_LUFS);
+        if (muxicColumn && (val1.isNull() || val2.isNull())) {
+            // An empty muxic cell sorts before any value, as SQL orders NULL.
+            result = val1.isNull() ? (val2.isNull() ? 0 : -1) : 1;
         } else {
-            result = -1;
+            // Sort as floats.
+            double delta = val1.toDouble() - val2.toDouble();
+
+            if (fabs(delta) < .00001) {
+                result = 0;
+            } else if (delta > 0.0) {
+                result = 1;
+            } else {
+                result = -1;
+            }
         }
     } else if (sortColumn == fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_KEY)) {
         KeyUtils::KeyNotation keyNotation = m_columnCache.keyNotation();

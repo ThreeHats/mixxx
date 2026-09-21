@@ -21,6 +21,10 @@ class WCoverArtMenu;
 class WCoverArtLabel;
 class DlgTagFetcher;
 
+namespace muxic {
+class TrackMetaFields;
+} // namespace muxic
+
 /// A dialog box to display and edit track properties.
 /// Use TrackPointer to load a track into the dialog or
 /// QModelIndex along with TrackModel to enable previous and next buttons
@@ -32,7 +36,7 @@ class DlgTrackInfo : public QDialog, public Ui::DlgTrackInfo {
     explicit DlgTrackInfo(
             UserSettingsPointer pUserSettings,
             const TrackModel* trackModel = nullptr);
-    ~DlgTrackInfo() override = default;
+    ~DlgTrackInfo() override;
 
   public slots:
     // Not thread safe. Only invoke via AutoConnection or QueuedConnection, not
@@ -116,9 +120,6 @@ class DlgTrackInfo : public QDialog, public Ui::DlgTrackInfo {
     }
 
     void updateTrackMetadataFields();
-    void updateMuxicFields(TrackId trackId);
-    void clearMuxicFields();
-    void saveMuxicFields();
     void updateSpinBpmFromBeats();
     void updateBpmEditControls();
     void updateBpmScaleButtonLabels();
@@ -144,6 +145,7 @@ class DlgTrackInfo : public QDialog, public Ui::DlgTrackInfo {
     parented_ptr<WColorPickerAction> m_pColorPicker;
 
     std::unique_ptr<DlgTagFetcher> m_pDlgTagFetcher;
+    std::unique_ptr<muxic::TrackMetaFields> m_pMuxicFields;
 
     bool m_widgetSizesFixed;
 };

@@ -1,15 +1,20 @@
 #include <gtest/gtest.h>
 
 #include <QDateTime>
+#include <QLabel>
+#include <QLineEdit>
+#include <QSpinBox>
 #include <QSqlQuery>
 #include <QThread>
 #include <QVariant>
+#include <QWidget>
 
 #include "library/relocatedtrack.h"
 #include "library/trackcollection.h"
 #include "muxic/librarycolumns.h"
 #include "muxic/trackmeta.h"
 #include "muxic/trackmetadao.h"
+#include "muxic/trackmetafields.h"
 #include "muxic/trackmetapoller.h"
 #include "test/librarytest.h"
 #include "track/track.h"
@@ -237,6 +242,35 @@ TEST_F(MuxicTrackMetaTest, PollReportsRowsThatShareOneStamp) {
     callPoller("stop");
     pollThread.quit();
     pollThread.wait();
+}
+
+TEST_F(MuxicTrackMetaTest, DialogWritesOnlyTheChangedField) {
+    const TrackId trackId = addTrack(QStringLiteral("-png.mp3"));
+    ASSERT_TRUE(trackId.isValid());
+    ASSERT_TRUE(dao().setEnergy(trackId, 4));
+    ASSERT_TRUE(dao().setTags(trackId, {QStringLiteral("old")}));
+
+    QWidget group;
+    QSpinBox energy(&group);
+    energy.setRange(0, muxic::kEnergyMax);
+    QLineEdit tags(&group);
+    QLabel danceability(&group);
+    QLabel loudness(&group);
+    muxic::TrackMetaFields fields(&group, &energy, &tags, &danceability, &loudness);
+    fields.load(trackId);
+    EXPECT_EQ(4, energy.value());
+    EXPECT_EQ(QStringLiteral("old"), tags.text());
+
+    // The hub writes new tags while the dialog is open.
+    ASSERT_TRUE(dao().setTags(trackId, {QStringLiteral("fresh")}));
+
+    // The user changed the energy only. Apply must keep the new tags.
+    energy.setValue(9);
+    fields.save();
+
+    const muxic::TrackMeta meta = dao().read(trackId);
+    EXPECT_EQ(9, meta.energy.value_or(0));
+    EXPECT_EQ(QStringList{QStringLiteral("fresh")}, meta.tags);
 }
 
 TEST(MuxicTagsTest, NormalizeAndEncode) {

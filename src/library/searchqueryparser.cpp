@@ -255,20 +255,8 @@ void SearchQueryParser::parseTokens(QStringList tokens,
                     pNode = std::make_unique<CrateFilterNode>(
                             &m_pTrackCollection->crates(), argument);
                 } else if (field == muxic::kColumnTags) {
-                    // A tag matches as a whole, thus the argument takes the
-                    // same normalization as a stored tag.
-                    const QStringList tags = muxic::parseTags(argument);
-                    if (tags.size() == 1) {
-                        pNode = std::make_unique<muxic::TagFilterNode>(
-                                m_pTrackCollection->database(), tags.first());
-                    } else if (tags.size() > 1) {
-                        auto gNode = std::make_unique<AndNode>();
-                        for (const QString& tag : tags) {
-                            gNode->addNode(std::make_unique<muxic::TagFilterNode>(
-                                    m_pTrackCollection->database(), tag));
-                        }
-                        pNode = std::move(gNode);
-                    }
+                    pNode = muxic::makeTagNode(
+                            m_pTrackCollection->database(), argument);
                 } else {
                     pNode = std::make_unique<TextFilterNode>(
                             m_pTrackCollection->database(),
@@ -282,23 +270,18 @@ void SearchQueryParser::parseTokens(QStringList tokens,
             QString argument = getTextArgument(numericFilterMatch.captured(2), &tokens).argument;
 
             if (!argument.isEmpty()) {
-                const QString column = resolveFilter(field);
-                if (argument == kMissingFieldSearchTerm) {
-                    pNode = std::make_unique<NullNumericFilterNode>(
-                         m_fieldToSqlColumns[field]);
-                } else if (column == muxic::kColumnEnergy) {
-                    pNode = std::make_unique<muxic::MetaNumericFilterNode>(
-                            m_fieldToSqlColumns[field],
-                            argument,
-                            muxic::MetaNumericFilterNode::Field::Energy);
-                } else if (column == muxic::kColumnDanceability) {
-                    pNode = std::make_unique<muxic::MetaNumericFilterNode>(
-                            m_fieldToSqlColumns[field],
-                            argument,
-                            muxic::MetaNumericFilterNode::Field::Danceability);
-                } else {
-                    pNode = std::make_unique<NumericFilterNode>(
-                         m_fieldToSqlColumns[field], argument);
+                // A muxic column takes its own node for every argument, the
+                // empty one included, because the value is not in the track.
+                pNode = muxic::makeNumericNode(
+                        resolveFilter(field), m_fieldToSqlColumns[field], argument);
+                if (!pNode) {
+                    if (argument == kMissingFieldSearchTerm) {
+                        pNode = std::make_unique<NullNumericFilterNode>(
+                                m_fieldToSqlColumns[field]);
+                    } else {
+                        pNode = std::make_unique<NumericFilterNode>(
+                                m_fieldToSqlColumns[field], argument);
+                    }
                 }
             }
         } else if (specialFilterMatch.hasMatch()) {

@@ -46,7 +46,8 @@ QString viewSelectExpression(const QString& columnName) {
         return QStringLiteral(LIBRARY_TABLE) + QLatin1Char('.') +
                 LIBRARYTABLE_REPLAYGAIN + QStringLiteral(" AS ") + kColumnLufs;
     }
-    return QString();
+    return mixxx::trackschema::tableForColumn(columnName) +
+            QLatin1Char('.') + columnName;
 }
 
 QString viewJoinClause() {

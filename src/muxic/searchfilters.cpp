@@ -20,6 +20,37 @@ std::optional<muxic::TrackMeta> readMeta(const TrackPointer& pTrack) {
 
 namespace muxic {
 
+std::unique_ptr<QueryNode> makeTagNode(const QSqlDatabase& database, const QString& argument) {
+    // A tag matches as a whole, thus the argument takes the same normalization
+    // as a stored tag.
+    const QStringList tags = parseTags(argument);
+    if (tags.isEmpty()) {
+        return nullptr;
+    }
+    if (tags.size() == 1) {
+        return std::make_unique<TagFilterNode>(database, tags.first());
+    }
+    auto pAndNode = std::make_unique<AndNode>();
+    for (const QString& tag : tags) {
+        pAndNode->addNode(std::make_unique<TagFilterNode>(database, tag));
+    }
+    return pAndNode;
+}
+
+std::unique_ptr<QueryNode> makeNumericNode(const QString& column,
+        const QStringList& sqlColumns,
+        const QString& argument) {
+    if (column == kColumnEnergy) {
+        return std::make_unique<MetaNumericFilterNode>(
+                sqlColumns, argument, MetaNumericFilterNode::Field::Energy);
+    }
+    if (column == kColumnDanceability) {
+        return std::make_unique<MetaNumericFilterNode>(
+                sqlColumns, argument, MetaNumericFilterNode::Field::Danceability);
+    }
+    return nullptr;
+}
+
 MetaNumericFilterNode::MetaNumericFilterNode(const QStringList& sqlColumns,
         const QString& argument,
         Field field)

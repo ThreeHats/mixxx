@@ -91,12 +91,7 @@ MixxxLibraryFeature::MixxxLibraryFeature(Library* pLibrary,
 
     QStringList qualifiedTableColumns;
     for (const auto& col : columns) {
-        QString expression = muxic::viewSelectExpression(col);
-        if (expression.isEmpty()) {
-            expression = mixxx::trackschema::tableForColumn(col) +
-                    QLatin1Char('.') + col;
-        }
-        qualifiedTableColumns.append(expression);
+        qualifiedTableColumns.append(muxic::viewSelectExpression(col));
     }
 
     QSqlQuery query(m_pTrackCollection->database());

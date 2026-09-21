@@ -16,7 +16,7 @@ const QStringList& viewColumns();
 /// True for a column that this file owns.
 bool isLibraryColumn(ColumnCache::Column column);
 
-/// The SELECT expression of a muxic column, or an empty string for a column
+/// The SELECT expression of a view column, for a muxic column and for a column
 /// of upstream.
 QString viewSelectExpression(const QString& columnName);
 

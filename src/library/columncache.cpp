@@ -15,6 +15,10 @@ const QString kSortInt = QStringLiteral("cast(%1 as integer)");
 const QString kSortNoCase = QStringLiteral("lower(%1)");
 const QString kSortNoCaseLex = mixxx::DbConnection::collateLexicographically(
         QStringLiteral("lower(%1)"));
+// The column holds the ReplayGain ratio, which falls while the loudness rises.
+// The minus sign puts the quiet tracks first in ascending order. A ratio of 0
+// means "not analyzed" and gives NULL, thus those rows group at one end.
+const QString kSortLufs = QStringLiteral("CASE WHEN %1 > 0 THEN -%1 END");
 
 struct ColumnProperties {
     const QString* pName;
@@ -261,9 +265,7 @@ void ColumnCache::setColumns(QStringList columns) {
     insertColumnSortByEnum(COLUMN_TRACKLOCATIONSTABLE_LOCATION, kSortNoCase);
 
     insertColumnSortByEnum(COLUMN_MUXIC_TAGS, kSortNoCase);
-    // The column holds the ReplayGain ratio, which falls while the loudness
-    // rises. The minus sign puts the quiet tracks first in ascending order.
-    insertColumnSortByEnum(COLUMN_MUXIC_LUFS, QStringLiteral("-%1"));
+    insertColumnSortByEnum(COLUMN_MUXIC_LUFS, kSortLufs);
 
     slotSetKeySortOrder(m_pKeyNotationCP->get());
 }

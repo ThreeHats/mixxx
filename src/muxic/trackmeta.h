@@ -40,9 +40,8 @@ struct TrackMeta {
 /// The text separates the tags with commas.
 QStringList parseTags(const QString& text);
 
-/// The stored form of the tags, with a comma before the first tag and after
-/// the last one, for example ",bass,vocal,". An empty list gives an empty
-/// string.
+/// The stored form of the tags, for example ",bass,vocal,".
+/// An empty list gives an empty string.
 QString encodeTags(const QStringList& tags);
 
 /// The tags of a stored string.
