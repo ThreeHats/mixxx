@@ -208,30 +208,56 @@ back.
 A stem file holds four parts that sum to the mix, thus each part alone is
 much quieter than the mix. Mixxx draws a stem track with a renderer of its
 own, `WaveformRendererStem`, which reads the four stem bands of the waveform
-and lays them on top of each other. Every other signal renderer draws the
-all band, which holds the mix. A stem track thus looked much smaller than
-the same music in a file with no stems.
+and lays them on top of each other. A file with no stems gets one of the
+other signal renderers, which read the all band or the low, mid and high
+bands. The all band holds the mix. A stem track thus looked much smaller
+than the same music in a file with no stems.
 
 The measurement, with four parts at 40, 30, 20 and 10 percent of the mix:
 the all band reaches 250 and the loudest stem band reaches 100, in the
 source file and in the stem file. On a waveform of 80 pixels the stem track
 drew 15.7 pixels where the normal track drew 39.2 pixels.
 
-The fork gives all parts of a strip one common factor, which lifts the
-loudest part to the height of the mix. The parts keep their size relative to
-each other, thus you still read which part is loud. The code is in
-`src/waveform/renderers/stemwaveformscale.h` and
+The fork gives the whole track one factor, `max(all)` over
+`max(loudest stem)`, which lifts the loudest part to the height of the mix.
+The parts keep their size relative to each other, thus you still read which
+part is loud, and a part keeps its height when another part starts. The code
+is in `src/waveform/renderers/stemwaveformscale.h` and
 `src/waveform/renderers/allshader/waveformrendererstem.cpp`.
 
-- All waveform types use this one renderer for a stem track, thus RGB, RGB
-  Stacked, Filtered, HSV and Simple all get the same height.
+The same change removed a second fault of the renderer: the gain of the deck
+came into the height two times, thus a track with a ReplayGain of -3 dB drew
+41 percent too big and ran past the edge of the waveform.
+
+- All waveform types use this one renderer for a stem track, thus every
+  item of **Preferences > Waveforms > Waveform type** gets the fix: Simple,
+  Filtered, HSV, RGB and Stacked. Simple, HSV and RGB draw a normal track at
+  the height of the all band, thus a stem track and a normal track now have
+  one height with those three. Filtered and Stacked draw the low, the mid
+  and the high band one over the other, and the tallest of the three is at
+  most the all band, thus a stem track can look a little taller than a
+  normal track with those two.
 - The overview needs no change. It reads the all band.
 - The cause is in Mixxx and not in the conversion. The sample stem file of
   Mixxx, `src/test/stems/sin_AAC_256kbps_VBR.stem.mp4`, has the same shape:
   the mix stream peaks at +1.0 dB and each stem stream at -3.2 dB. The owner
   can report the change to Mixxx.
-- The ReplayGain is not the cause. The job copies the gain of the source
-  track, and the visual gain of a waveform follows that gain.
+- The ReplayGain is not the cause of the small waveform. Read the next
+  section for what the ReplayGain does to the height.
+
+### The display mode of a stem track
+
+**Preferences > Waveforms > Display mode** selects how a stem track looks.
+This item is not the **Waveform type** item, which selects the colors of
+every track.
+
+| Display mode | What it does |
+|---|---|
+| Overlapping | The default. The four parts lie on top of each other, and the factor above lifts them to the height of the mix |
+| Stacked | Each part gets a lane of a quarter of the height. Mixxx draws each lane at the level of that part, with **no factor**, because the reason to use this mode is to read the level of one part |
+
+The fork changed the Overlapping mode only. The Stacked mode looks as it
+did.
 
 ## The ReplayGain of a stem file
 
@@ -250,15 +276,21 @@ The fork mixes the stem channels down to stereo before the analyzer, in the
 same way as the ReplayGain 1.0 analyzer already does. The code is in
 `src/analyzer/analyzerebur128.cpp`.
 
-A stem file that the fork makes is not affected, because the job copies the
-ReplayGain of the source track and the analyzer then does not run. A stem
-file from another source, for example a file that you buy, is affected. This
-is a bug of Mixxx, thus the owner can report the change.
+Which files this hits:
 
-**Preferences > Waveforms** has a **Display mode** for stem tracks. With
-**Stacked**, each part gets a quarter of the height, thus the waveform is
-smaller on purpose. **Overlapping**, the default, is the mode that this
-section describes.
+- A stem file from another source, for example a file that you buy.
+- A stem file of a source track that carries **no** ReplayGain. The job then
+  copies an empty gain, and the analyzer runs on the stem file.
+- Any stem track on which you start **Re-analyze**, and any stem track that
+  an earlier build of the fork analyzed. Such a track carries a ReplayGain
+  that is up to 5.8 dB too high, it plays too loud and it draws a waveform
+  that is too big. Run **Re-analyze** on those tracks with this build to
+  correct them.
+
+A stem file of a source track that carries a ReplayGain is not affected. The
+job copies that gain and the analyzer then does not run.
+
+This is a bug of Mixxx, thus the owner can report the change.
 
 ## How the muxic rig sees it
 
