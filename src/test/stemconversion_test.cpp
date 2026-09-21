@@ -1,9 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <QColor>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -218,12 +222,25 @@ TEST_F(StemConversionTest, ExpandCommandTemplateSubstitutes) {
 TEST_F(StemConversionTest, ExpandCommandTemplateRejectsBadInput) {
     QMap<QString, QString> placeholders;
     placeholders.insert(QStringLiteral("INPUT"), QStringLiteral("/music/a.mp3"));
+    placeholders.insert(QStringLiteral("MODEL"), QString());
 
     QString errorMessage;
     EXPECT_TRUE(mixxx::expandCommandTemplate(
             QStringLiteral("tool $NOPE"), placeholders, &errorMessage)
                         .isEmpty());
     EXPECT_TRUE(errorMessage.contains(QStringLiteral("NOPE")));
+
+    // A name in the wrong case must not reach the program as plain text.
+    EXPECT_TRUE(mixxx::expandCommandTemplate(
+            QStringLiteral("tool $input"), placeholders, &errorMessage)
+                        .isEmpty());
+    EXPECT_TRUE(errorMessage.contains(QStringLiteral("input")));
+
+    // An empty model would give the program a bare option value.
+    EXPECT_TRUE(mixxx::expandCommandTemplate(
+            QStringLiteral("tool -n $MODEL \"$INPUT\""), placeholders, &errorMessage)
+                        .isEmpty());
+    EXPECT_TRUE(errorMessage.contains(QStringLiteral("MODEL")));
 
     EXPECT_TRUE(mixxx::expandCommandTemplate(
             QStringLiteral("tool \"$INPUT"), placeholders, &errorMessage)
@@ -252,11 +269,24 @@ TEST_F(StemConversionTest, OutputFilePathFollowsTheMode) {
             settings.outputFilePathFor(QStringLiteral("/music/a track.stem.mp4")));
 }
 
-TEST_F(StemConversionTest, StemManifestMatchesTheReader) {
-    const QString manifest = mixxx::stemManifestJson();
-    EXPECT_TRUE(manifest.contains(QStringLiteral("\"version\":1")));
-    EXPECT_TRUE(manifest.contains(QStringLiteral("\"Drums\"")));
-    EXPECT_TRUE(manifest.contains(QStringLiteral("\"Vocals\"")));
+TEST_F(StemConversionTest, StemManifestHasTheFourStemsInOrder) {
+    const QJsonDocument manifest =
+            QJsonDocument::fromJson(mixxx::stemManifestJson().toUtf8());
+    ASSERT_TRUE(manifest.isObject());
+    EXPECT_EQ(1, manifest.object().value(QStringLiteral("version")).toInt());
+    const QJsonArray stems =
+            manifest.object().value(QStringLiteral("stems")).toArray();
+    ASSERT_EQ(4, stems.size());
+    const QStringList expectedNames = {QStringLiteral("Drums"),
+            QStringLiteral("Bass"),
+            QStringLiteral("Other"),
+            QStringLiteral("Vocals")};
+    for (int stemIndex = 0; stemIndex < stems.size(); ++stemIndex) {
+        const QJsonObject stem = stems.at(stemIndex).toObject();
+        EXPECT_QSTRING_EQ(expectedNames.at(stemIndex),
+                stem.value(QStringLiteral("name")).toString());
+        EXPECT_TRUE(QColor(stem.value(QStringLiteral("color")).toString()).isValid());
+    }
 }
 
 TEST_F(StemConversionTest, FindStemFilesOrdersByRole) {

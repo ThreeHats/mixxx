@@ -163,8 +163,10 @@ QStringList expandCommandTemplate(const QString& commandTemplate,
         return fail(QObject::tr("The command is empty."));
     }
 
-    static const QRegularExpression placeholderRegex(
-            QStringLiteral("\\$\\{([A-Z_][A-Z0-9_]*)\\}|\\$([A-Z_][A-Z0-9_]*)"));
+    // A name in any case matches, thus a name in the wrong case gives an
+    // error and does not reach the program as plain text.
+    static const QRegularExpression placeholderRegex(QStringLiteral(
+            "\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}|\\$([A-Za-z_][A-Za-z0-9_]*)"));
     QStringList expandedTokens;
     expandedTokens.reserve(tokens.size());
     for (const QString& rawToken : std::as_const(tokens)) {
@@ -178,6 +180,12 @@ QStringList expandCommandTemplate(const QString& commandTemplate,
                     : match.captured(1);
             if (!placeholders.contains(name)) {
                 return fail(QObject::tr("The command uses the unknown placeholder $%1.")
+                                    .arg(name));
+            }
+            if (placeholders.value(name).isEmpty()) {
+                return fail(QObject::tr(
+                        "The placeholder $%1 of the command has "
+                        "no value.")
                                     .arg(name));
             }
             expanded.append(rawToken.mid(copiedUpTo, match.capturedStart() - copiedUpTo));

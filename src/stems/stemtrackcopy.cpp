@@ -4,6 +4,19 @@
 #include "track/track.h"
 #include "util/assert.h"
 
+namespace {
+
+/// The same position at another sample rate. An invalid position stays
+/// invalid, thus a cue with no end keeps none.
+mixxx::audio::FramePos scaleFramePos(mixxx::audio::FramePos position, double ratio) {
+    if (!position.isValid()) {
+        return position;
+    }
+    return mixxx::audio::FramePos(position.value() * ratio).toNearestFrameBoundary();
+}
+
+} // anonymous namespace
+
 namespace mixxx {
 
 BeatsPointer rescaleBeats(const BeatsPointer& pBeats, audio::SampleRate sampleRate) {
@@ -68,12 +81,18 @@ void copyTrackToStem(const Track& sourceTrack, Track* pStemTrack) {
     }
 
     if (sourceSampleRate.isValid() && stemSampleRate.isValid()) {
+        const double ratio = stemSampleRate / sourceSampleRate;
         QList<CuePointer> stemCues;
         const QList<CuePointer> sourceCues = sourceTrack.getCuePoints();
         stemCues.reserve(sourceCues.size());
         for (const CuePointer& pSourceCue : sourceCues) {
-            stemCues.append(CuePointer(new Cue(
-                    pSourceCue->getCueInfo(sourceSampleRate), stemSampleRate, true)));
+            auto pStemCue = CuePointer(new Cue(pSourceCue->getType(),
+                    pSourceCue->getHotCue(),
+                    scaleFramePos(pSourceCue->getPosition(), ratio),
+                    scaleFramePos(pSourceCue->getEndPosition(), ratio),
+                    pSourceCue->getColor()));
+            pStemCue->setLabel(pSourceCue->getLabel());
+            stemCues.append(pStemCue);
         }
         pStemTrack->setCuePoints(stemCues);
     }
