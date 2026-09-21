@@ -270,3 +270,226 @@ TEST_F(RelatedTracksModelTest, theRootNodeOffersNoRemove) {
     m_model.selectRelatedTo(reference);
     EXPECT_TRUE(m_model.hasCapabilities(TrackModel::Capability::Remove));
 }
+
+namespace {
+
+/// One row of a deck view.
+struct DeckRow {
+    int deckNumber;
+    TrackId trackId;
+
+    bool operator==(const DeckRow& other) const {
+        return deckNumber == other.deckNumber && trackId == other.trackId;
+    }
+};
+
+} // anonymous namespace
+
+/// Reads the deck views of the related tracks panel.
+class RelatedDecksModelTest : public RelatedTracksModelTest {
+  protected:
+    QList<DeckRow> deckRows() {
+        const int deckColumn = m_model.fieldIndex(QStringLiteral("deck_number"));
+        EXPECT_GE(deckColumn, 0);
+        QList<DeckRow> rows;
+        for (int row = 0; row < m_model.rowCount(); ++row) {
+            rows.append(DeckRow{
+                    m_model.data(m_model.index(row, deckColumn)).toInt(),
+                    m_model.getTrackId(m_model.index(row, 0))});
+        }
+        return rows;
+    }
+
+    void relate(TrackId source, TrackId target, int rating) {
+        muxic::TrackRelation relation(source, target);
+        relation.setRating(rating);
+        ASSERT_TRUE(storage().saveRelation(relation));
+    }
+};
+
+TEST_F(RelatedDecksModelTest, eachDeckKeepsItsOwnRows) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId deck2 = addTrack(QStringLiteral("-jpg.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId ofDeck1 = addTrack(QStringLiteral("-vbr.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId ofDeck2 = addTrack(QStringLiteral(".flac"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(ofDeck2.isValid());
+    relate(deck1, ofDeck1, 0);
+    relate(deck2, ofDeck2, 0);
+
+    m_model.selectRelatedToDecks(
+            muxic::DeckTrackList{muxic::DeckTrack{1, deck1}, muxic::DeckTrack{2, deck2}});
+
+    const QList<DeckRow> rows = deckRows();
+    ASSERT_EQ(2, rows.size());
+    // The rows come in the order of the decks.
+    EXPECT_EQ(1, rows.at(0).deckNumber);
+    EXPECT_EQ(ofDeck1, rows.at(0).trackId);
+    EXPECT_EQ(2, rows.at(1).deckNumber);
+    EXPECT_EQ(ofDeck2, rows.at(1).trackId);
+}
+
+TEST_F(RelatedDecksModelTest, aTrackOfTwoDecksHasTwoRows) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId deck2 = addTrack(QStringLiteral("-jpg.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId shared = addTrack(QStringLiteral("-vbr.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(shared.isValid());
+    relate(deck1, shared, 0);
+    relate(deck2, shared, 0);
+
+    m_model.selectRelatedToDecks(
+            muxic::DeckTrackList{muxic::DeckTrack{1, deck1}, muxic::DeckTrack{2, deck2}});
+
+    const QList<DeckRow> rows = deckRows();
+    ASSERT_EQ(2, rows.size());
+    EXPECT_EQ(shared, rows.at(0).trackId);
+    EXPECT_EQ(shared, rows.at(1).trackId);
+    EXPECT_EQ(1, rows.at(0).deckNumber);
+    EXPECT_EQ(2, rows.at(1).deckNumber);
+}
+
+TEST_F(RelatedDecksModelTest, theBestRelationOfADeckComesFirst) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId low = addTrack(QStringLiteral("-jpg.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId high = addTrack(QStringLiteral("-vbr.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(high.isValid());
+    relate(deck1, low, 1);
+    relate(deck1, high, 5);
+
+    m_model.selectRelatedToDecks(muxic::DeckTrackList{muxic::DeckTrack{1, deck1}});
+
+    const QList<DeckRow> rows = deckRows();
+    ASSERT_EQ(2, rows.size());
+    EXPECT_EQ(high, rows.at(0).trackId);
+    EXPECT_EQ(low, rows.at(1).trackId);
+}
+
+TEST_F(RelatedDecksModelTest, aDeckThatHoldsNoTrackDropsOut) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId deck2 = addTrack(QStringLiteral("-jpg.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId ofDeck1 = addTrack(QStringLiteral("-vbr.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId ofDeck2 = addTrack(QStringLiteral(".flac"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(ofDeck2.isValid());
+    relate(deck1, ofDeck1, 0);
+    relate(deck2, ofDeck2, 0);
+
+    // Deck 1 gives its track back, thus only deck 2 is left.
+    m_model.selectRelatedToDecks(muxic::DeckTrackList{muxic::DeckTrack{2, deck2}});
+    QList<DeckRow> rows = deckRows();
+    ASSERT_EQ(1, rows.size());
+    EXPECT_EQ(2, rows.at(0).deckNumber);
+    EXPECT_EQ(ofDeck2, rows.at(0).trackId);
+
+    // No deck holds a track. The view keeps its columns and holds no row.
+    m_model.selectRelatedToDecks(muxic::DeckTrackList());
+    EXPECT_EQ(0, m_model.rowCount());
+    EXPECT_GE(m_model.fieldIndex(QStringLiteral("deck_number")), 0);
+}
+
+TEST_F(RelatedDecksModelTest, aRelationAndAPurgeChangeTheRows) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId other = addTrack(QStringLiteral("-jpg.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(other.isValid());
+
+    m_model.selectRelatedToDecks(muxic::DeckTrackList{muxic::DeckTrack{1, deck1}});
+    EXPECT_EQ(0, m_model.rowCount());
+
+    relate(deck1, other, 3);
+    m_model.refresh();
+    ASSERT_EQ(1, m_model.rowCount());
+    EXPECT_EQ(other, m_model.getTrackId(m_model.index(0, 0)));
+
+    trackCollectionManager()->purgeTracks(QList<TrackRef>{TrackRef::fromFilePath(
+            getTestFile(QStringLiteral("-jpg.mp3")), other)});
+    m_model.refresh();
+    EXPECT_EQ(0, m_model.rowCount());
+    EXPECT_EQ(0u, storage().countRelations());
+}
+
+TEST_F(RelatedDecksModelTest, aDeckViewTakesNoSortColumnOfTheLibrary) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(deck1.isValid());
+
+    // The Preview column of the view carries a sort column id. The test
+    // has no track source, thus the columns of the library carry none.
+    m_model.selectRelatedTo(deck1);
+    EXPECT_TRUE(m_model.hasCapabilities(TrackModel::Capability::Sorting));
+    const int previewColumn =
+            m_model.columnIndexFromSortColumnId(TrackModel::SortColumnId::Preview);
+    ASSERT_GE(previewColumn, 0);
+    EXPECT_EQ(TrackModel::SortColumnId::Preview,
+            m_model.sortColumnIdFromColumnIndex(previewColumn));
+
+    m_model.selectRelatedToDecks(muxic::DeckTrackList{muxic::DeckTrack{1, deck1}});
+    EXPECT_FALSE(m_model.hasCapabilities(TrackModel::Capability::Sorting));
+    // The table view of the panel keeps its own order.
+    EXPECT_EQ(-1, m_model.columnIndexFromSortColumnId(TrackModel::SortColumnId::Preview));
+    EXPECT_EQ(TrackModel::SortColumnId::Invalid,
+            m_model.sortColumnIdFromColumnIndex(previewColumn));
+}
+
+TEST_F(RelatedDecksModelTest, theSuggestionsOfEachDeckCarryItsDeckNumber) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            kReferenceBpm,
+            mixxx::track::io::key::INVALID);
+    const TrackId deck2 = addTrack(QStringLiteral("-jpg.mp3"),
+            kReferenceBpm * 1.5,
+            mixxx::track::io::key::INVALID);
+    const TrackId ofDeck1 = addTrack(QStringLiteral("-vbr.mp3"),
+            kReferenceBpm,
+            mixxx::track::io::key::INVALID);
+    const TrackId ofDeck2 = addTrack(QStringLiteral(".flac"),
+            kReferenceBpm * 1.5,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(ofDeck2.isValid());
+
+    m_model.selectSuggestedForDecks(
+            muxic::DeckTrackList{muxic::DeckTrack{1, deck1}, muxic::DeckTrack{2, deck2}});
+
+    const QList<DeckRow> rows = deckRows();
+    ASSERT_FALSE(rows.isEmpty());
+    for (const DeckRow& row : rows) {
+        if (row.deckNumber == 1) {
+            EXPECT_NE(ofDeck2, row.trackId);
+        } else {
+            EXPECT_EQ(2, row.deckNumber);
+            EXPECT_NE(ofDeck1, row.trackId);
+        }
+    }
+    // Each deck brings the track that has its tempo.
+    EXPECT_TRUE(rows.contains(DeckRow{1, ofDeck1}));
+    EXPECT_TRUE(rows.contains(DeckRow{2, ofDeck2}));
+}

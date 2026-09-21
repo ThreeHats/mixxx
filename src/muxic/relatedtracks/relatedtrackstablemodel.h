@@ -4,6 +4,7 @@
 #include <QStringList>
 
 #include "library/trackset/tracksettablemodel.h"
+#include "muxic/relatedtracks/decktrack.h"
 #include "muxic/relatedtracks/trackrelation.h"
 #include "track/trackid.h"
 
@@ -23,6 +24,12 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
         RelatedTo,
         /// The tracks that fit the tempo and the key of the reference track.
         SuggestedFor,
+        /// The tracks that a relation leads to from the track of a deck,
+        /// with the deck number in a column of its own.
+        RelatedToDecks,
+        /// The tracks that fit the tempo and the key of the track of a
+        /// deck, with the deck number in a column of its own.
+        SuggestedForDecks,
     };
 
     RelatedTracksTableModel(QObject* pParent,
@@ -32,6 +39,12 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
     void selectAllRelated();
     void selectRelatedTo(TrackId trackId);
     void selectSuggestedFor(TrackId trackId);
+    /// Shows the tracks that go with the track of each deck. A track that
+    /// goes with two decks has one row per deck.
+    void selectRelatedToDecks(const DeckTrackList& deckTracks);
+    /// Shows the tracks that fit the tempo and the key of the track of each
+    /// deck, one row per deck.
+    void selectSuggestedForDecks(const DeckTrackList& deckTracks);
     /// Reads the table again with the mode and the reference track of the
     /// last select.
     void refresh();
@@ -42,11 +55,21 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
     TrackId referenceTrackId() const {
         return m_referenceTrackId;
     }
+    /// True if the rows carry a deck number.
+    bool showsDecks() const {
+        return m_mode == Mode::RelatedToDecks || m_mode == Mode::SuggestedForDecks;
+    }
 
     void removeTracks(const QModelIndexList& indices) final;
 
     Capabilities getCapabilities() const final;
     QString modelKey(bool noSearch) const override;
+    bool isColumnHiddenByDefault(int column) override;
+
+    /// A deck view keeps its own order, thus it takes no sort column from
+    /// `[Library],sort_column` and gives none back.
+    TrackModel::SortColumnId sortColumnIdFromColumnIndex(int column) const override;
+    int columnIndexFromSortColumnId(TrackModel::SortColumnId sortColumn) const override;
 
     ///////////////////////////////////////////////////////////////////////////
     // Editing of the relation columns
@@ -82,9 +105,17 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
     void storeSearchText();
     TrackRelationStorage& storage() const;
     bool writeRelationColumn(const QModelIndex& index, const QVariant& value);
+    /// The WHERE of the tracks that fit the tempo and the key of the track.
+    QString formatSuggestionConditions(TrackId trackId) const;
+    /// The SELECT of one deck of a view that shows the relations.
+    QString formatRelatedToDeckBranch(const DeckTrack& deckTrack) const;
+    /// The SELECT of one deck of a view that shows the suggestions.
+    QString formatSuggestedForDeckBranch(const DeckTrack& deckTrack) const;
 
     Mode m_mode = Mode::AllRelated;
     TrackId m_referenceTrackId;
+    /// The decks of the last select in a deck mode.
+    DeckTrackList m_deckTracks;
     /// The text of the last CREATE VIEW of each view name. A view only has
     /// to go and come back when its text changes.
     QHash<QString, QString> m_viewQueries;
