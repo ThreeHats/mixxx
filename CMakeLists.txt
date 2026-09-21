@@ -1489,6 +1489,7 @@ add_library(
   src/library/traktor/traktorfeature.cpp
   src/library/treeitem.cpp
   src/library/treeitemmodel.cpp
+  src/librarywindow/librarywindowfocus.cpp
   src/librarywindow/librarywindowmanager.cpp
   src/librarywindow/wlibrarywindow.cpp
   src/mixer/auxiliary.cpp

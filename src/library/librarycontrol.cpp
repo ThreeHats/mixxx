@@ -12,6 +12,7 @@
 #include "control/controlpushbutton.h"
 #include "library/library.h"
 #include "library/libraryview.h"
+#include "librarywindow/librarywindowfocus.h"
 #include "mixer/playermanager.h"
 #include "moc_librarycontrol.cpp"
 #include "util/cmdlineargs.h"
@@ -28,8 +29,9 @@ const QString kAppGroup = QStringLiteral("[App]");
 /// hold the keyboard focus, thus make the window of the widget active.
 void activateWindowOf(QWidget* pWidget) {
     QWidget* pWindow = pWidget->window();
-    if (pWindow && !pWindow->isActiveWindow() &&
-            QApplication::activeModalWidget() == nullptr) {
+    if (mixxx::librarywindow::needsWindowActivation(pWindow,
+                QApplication::activeWindow(),
+                QApplication::activeModalWidget())) {
         pWindow->raise();
         pWindow->activateWindow();
     }
