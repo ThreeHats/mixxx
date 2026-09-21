@@ -3034,6 +3034,7 @@ if(BUILD_TESTING)
       src/test/steminfotest.cpp
       src/test/stemcontrolobjecttest.cpp
       src/test/stemconversion_test.cpp
+      src/test/stemwaveformtest.cpp
     )
   endif()
   if(BUILD_BENCH)
