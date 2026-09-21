@@ -37,8 +37,11 @@ LibraryWindowManager::LibraryWindowManager(UserSettingsPointer pConfig,
                   make_parented<ControlProxy>(kMaximizedConfigKey, this)) {
     m_pShowControl->connectValueChanged(
             this, &LibraryWindowManager::slotShowControlChanged);
-    m_pMaximizedControl->connectValueChanged(
-            this, &LibraryWindowManager::slotMaximizedControlChanged);
+    // A skin writes this control back when the page of the stack changes. A
+    // queued connection keeps the manager out of that chain.
+    m_pMaximizedControl->connectValueChanged(this,
+            &LibraryWindowManager::slotMaximizedControlChanged,
+            Qt::QueuedConnection);
 }
 
 LibraryWindowManager::~LibraryWindowManager() {
@@ -81,7 +84,7 @@ void LibraryWindowManager::slotShowControlChanged(double value) {
 void LibraryWindowManager::slotMaximizedControlChanged(double value) {
     // The maximized page of a skin holds the small decks and the place of the
     // library. While the library is out, that page shows almost nothing.
-    if (value > 0.0 && isDetached()) {
+    if (value > 0.0 && isDetached() && m_pMaximizedControl->toBool()) {
         m_pMaximizedControl->set(0.0);
     }
 }

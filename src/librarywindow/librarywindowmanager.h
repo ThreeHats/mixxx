@@ -40,6 +40,7 @@ class LibraryWindowManager : public QObject {
 
   private slots:
     void slotShowControlChanged(double value);
+    /// The connection of this slot is queued, thus the value can be old.
     void slotMaximizedControlChanged(double value);
 
   private:

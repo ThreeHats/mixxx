@@ -83,8 +83,9 @@ The maximized page of a skin holds the small decks and the place of the
 library. While the library is in its own window, that place is empty, thus the
 page shows almost nothing. The fork stops the page in that state:
 
-- The control `[Skin],show_maximized_library` stays 0. A controller mapping, a
-  skin button or the `Space` key that sets it to 1 gets 0 back immediately.
+- The control `[Skin],show_maximized_library` stays 0. A controller mapping or
+  a skin button that sets it to 1 gets 0 back, before the window draws the
+  page. The `Space` key does nothing, because the menu entry is off.
 - The View menu entry "Maximize Library" is grey.
 - A library that goes out while the page is maximized gives the usual page
   back first.

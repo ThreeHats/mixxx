@@ -110,8 +110,10 @@ class LibraryWindowManagerTest : public MixxxTest {
         m_pShowControl->set(show ? 1.0 : 0.0);
     }
 
+    /// The manager takes this control through the event loop.
     void setMaximized(bool maximized) {
         m_pMaximizedControl->set(maximized ? 1.0 : 0.0);
+        QApplication::processEvents();
     }
 
     QDomDocument m_dom;
