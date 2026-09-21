@@ -1520,8 +1520,10 @@ add_library(
   src/muxic/librarycolumns/trackmetadao.cpp
   src/muxic/librarycolumns/trackmetafields.cpp
   src/muxic/librarycolumns/trackmetapoller.cpp
+  src/muxic/relatedtracks/relateddeckwatcher.cpp
   src/muxic/relatedtracks/relatedtracksfeature.cpp
   src/muxic/relatedtracks/relatedtracksmenu.cpp
+  src/muxic/relatedtracks/relatedtrackspanel.cpp
   src/muxic/relatedtracks/relatedtrackstablemodel.cpp
   src/muxic/relatedtracks/relationratingdelegate.cpp
   src/muxic/relatedtracks/relationsuggester.cpp
@@ -2987,6 +2989,7 @@ if(BUILD_TESTING)
     src/test/queryutiltest.cpp
     src/test/rangelist_test.cpp
     src/test/readaheadmanager_test.cpp
+    src/test/relateddeckwatcher_test.cpp
     src/test/relatedtracksmodel_test.cpp
     src/test/relationsuggester_test.cpp
     src/test/replaygaintest.cpp
