@@ -40,6 +40,7 @@ class LibraryWindowManager : public QObject {
 
   private slots:
     void slotShowControlChanged(double value);
+    void slotMaximizedControlChanged(double value);
 
   private:
     /// One place of the skin that can show the library. A skin has one place
@@ -71,4 +72,5 @@ class LibraryWindowManager : public QObject {
     /// names the window that asked for it.
     quint64 m_windowGeneration;
     parented_ptr<ControlProxy> m_pShowControl;
+    parented_ptr<ControlProxy> m_pMaximizedControl;
 };

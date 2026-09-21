@@ -76,7 +76,20 @@ by 700 in the center of the primary screen.
 - A skin reload and a skin change. Mixxx puts the library back in the old skin
   first, then takes the library area of the new skin and opens the window
   again.
-- The "Maximize Library" toggle of the main window.
+
+## Maximize Library while the library is out
+
+The maximized page of a skin holds the small decks and the place of the
+library. While the library is in its own window, that place is empty, thus the
+page shows almost nothing. The fork stops the page in that state:
+
+- The control `[Skin],show_maximized_library` stays 0. A controller mapping, a
+  skin button or the `Space` key that sets it to 1 gets 0 back immediately.
+- The View menu entry "Maximize Library" is grey.
+- A library that goes out while the page is maximized gives the usual page
+  back first.
+
+The toggle works as before when the library comes back to the main window.
 
 ## The skins
 
@@ -105,7 +118,7 @@ to 0. The same happens when a skin fails to load.
 | `src/librarywindow/librarywindowmanager.cpp` | Finds the library area, moves it, and follows the control |
 | `src/librarywindow/wlibrarywindow.cpp` | The window: style, geometry, close |
 | `src/librarywindow/librarywindowfocus.cpp` | The rule that says when a window must become active |
-| `src/test/librarywindowmanagertest.cpp` | 10 tests of the manager on a skin tree of test widgets |
+| `src/test/librarywindowmanagertest.cpp` | 13 tests of the manager on a skin tree of test widgets |
 | `src/test/librarywindowfocustest.cpp` | 5 tests of the focus rule |
 
 The hooks into upstream files are small:
@@ -115,8 +128,8 @@ The hooks into upstream files are small:
 - `src/widget/wsingletoncontainer.cpp`: a container does not take a singleton
   that lives in another window.
 - `src/skin/skincontrols.cpp`: the new control.
-- `src/widget/wmainmenubar.cpp`: the menu entry, and the application context
-  for the full screen shortcut.
+- `src/widget/wmainmenubar.cpp`: the menu entry, the application context for
+  the full screen shortcut, and the grey "Maximize Library" entry.
 - `src/library/librarycontrol.cpp`: make the window of a library widget active
   before the widget takes the focus.
 - `res/keyboard/en_US.kbd.cfg`: the line `ViewMenu_ShowLibraryWindow Ctrl+7`,
@@ -125,9 +138,6 @@ The hooks into upstream files are small:
 ## What is not done
 
 - The QML skin has no library window.
-- "Maximize Library" while the library is detached leaves the main window
-  almost empty, because that page of the skin holds only small decks and the
-  library. Use it only while the library is in the main window.
 - The size of the sidebar comes from the splitter of the skin, which keeps one
   ratio for both windows. Drag the splitter in the library window to correct
   it.

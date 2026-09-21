@@ -102,6 +102,12 @@ class WMainMenuBar : public QMenuBar {
     void slotDeveloperStatsBase(bool enable);
     void slotDeveloperDebugger(bool toggle);
     void slotVisitUrl(const QUrl& url);
+    /// The skin controls come up after the menu bar, thus take the control of
+    /// the library window again each time a skin is loaded.
+    void slotReconnectLibraryWindowControl();
+    /// While the library is in a window of its own, the maximized page of the
+    /// skin is empty. The entry that shows that page is off in that state.
+    void slotLibraryWindowStateChanged();
 
   private:
     void initialize();
@@ -114,6 +120,8 @@ class WMainMenuBar : public QMenuBar {
 
     UserSettingsPointer m_pConfig;
     QAction* m_pViewKeywheel;
+    QAction* m_pViewMaximizeLibrary;
+    QScopedPointer<ControlProxy> m_pLibraryWindowControl;
     // TODO KeyboardEventFilterPointer ??
     std::shared_ptr<KeyboardEventFilter> m_pKeyboard;
     QList<QAction*> m_loadToDeckActions;
