@@ -37,6 +37,9 @@ makes it one time at the start, thus it works with each skin.
 The menu entry reads the same control, thus the check mark follows a change
 that comes from a controller.
 
+If the skin has no library area that can move, the control goes back to 0 and
+the log says why.
+
 ## The config keys
 
 Mixxx writes these keys to `mixxx.cfg`.
@@ -44,14 +47,15 @@ Mixxx writes these keys to `mixxx.cfg`.
 | Key | Content |
 |---|---|
 | `[Skin] show_library_window` | The state of the toggle, 0 or 1 |
-| `[LibraryWindow] geometry` | `x,y,width,height` of the window |
-| `[LibraryWindow] screen` | The name of the screen that holds the window |
-| `[LibraryWindow] state` | `normal`, `maximized` or `fullscreen` |
+| `[LibraryWindow] geometry` | The result of `QWidget::saveGeometry()`, as base64 |
 
-At the start, Mixxx looks for the saved screen. If that screen is absent, the
-window goes to the center of the primary screen with the saved size. If the
-saved area is larger than the screen, or outside of it, Mixxx moves the window
-into the screen.
+The window uses `saveGeometry()` and `restoreGeometry()`, the same pair that
+the main window uses for `[MainWindow] geometry`. One value holds the frame,
+the screen, the scale of the screen and the maximized or full screen state. Qt
+moves a window that no screen shows any more onto a screen that is there, and
+it refuses a value that comes from a screen of a very different size. On the
+first use, and each time Qt refuses the value, the window gets a size of 1000
+by 700 in the center of the primary screen.
 
 ## What works while the library is detached
 
@@ -61,8 +65,10 @@ into the screen.
 - The keyboard mapping of Mixxx (`res/keyboard/*.kbd.cfg`), because the
   window has the same keyboard event filter as the main window.
 - The library controls of a controller (`[Library],MoveFocus`, `GoToItem`,
-  `MoveVertical` and the others). A control that asks for the focus now makes
-  the window of the library widget the active window first.
+  `MoveVertical` and the others). A control that asks for the focus makes the
+  window of the library widget the active window first, but only when Mixxx is
+  already the program in front and no modal dialog is open. A controller thus
+  cannot pull Mixxx over Ardour or Strudel.
 - `[Library],focused_widget`, because Mixxx follows the focus of each window.
 - Drag and drop of a track from the track table to a deck of the main window.
 - The track context menu, the tooltips and the skin style. The window takes
@@ -88,11 +94,9 @@ window gives the space to the other widgets.
 | Shade | Works, from the same singleton mechanism. Not checked with screenshots |
 | LateNightQML | No. The QML skin is out of scope |
 
-A skin that has no library singleton gets a second mechanism: the fork takes
-the closest widget that holds the track table, the sidebar and the search box,
-and puts a stand-in of zero size in its place. This needs a parent with a
-layout. If the skin gives neither, the log says that the skin has no library
-area for a window of its own, and the toggle does nothing.
+A skin that has no library singleton gets no library window. The log says that
+the skin has no library area for a window of its own, and the control goes back
+to 0. The same happens when a skin fails to load.
 
 ## Code
 
@@ -100,8 +104,9 @@ area for a window of its own, and the toggle does nothing.
 |---|---|
 | `src/librarywindow/librarywindowmanager.cpp` | Finds the library area, moves it, and follows the control |
 | `src/librarywindow/wlibrarywindow.cpp` | The window: style, geometry, close |
-| `src/librarywindow/librarywindowplacement.cpp` | The geometry and screen logic, with no Qt widget |
-| `src/test/librarywindowplacementtest.cpp` | 10 tests of that logic |
+| `src/librarywindow/librarywindowfocus.cpp` | The rule that says when a window must become active |
+| `src/test/librarywindowmanagertest.cpp` | 10 tests of the manager on a skin tree of test widgets |
+| `src/test/librarywindowfocustest.cpp` | 5 tests of the focus rule |
 
 The hooks into upstream files are small:
 
@@ -114,6 +119,8 @@ The hooks into upstream files are small:
   for the full screen shortcut.
 - `src/library/librarycontrol.cpp`: make the window of a library widget active
   before the widget takes the focus.
+- `res/keyboard/en_US.kbd.cfg`: the line `ViewMenu_ShowLibraryWindow Ctrl+7`,
+  next to the other View menu lines.
 
 ## What is not done
 
@@ -124,8 +131,13 @@ The hooks into upstream files are small:
 - The size of the sidebar comes from the splitter of the skin, which keeps one
   ratio for both windows. Drag the splitter in the library window to correct
   it.
-- Mixxx writes the geometry of the window when the library comes back and when
-  Mixxx stops. A crash loses the last position.
-- The shortcut `Ctrl+7` is a default in the code. `res/keyboard/en_US.kbd.cfg`
-  has no line for it. To change it, add
-  `ViewMenu_ShowLibraryWindow <key>` to the keyboard mapping.
+- Mixxx writes the geometry of the window when the window closes, when the
+  library comes back and when Mixxx stops. A crash loses the last position.
+- On Wayland, `activateWindow()` and `raise()` do nothing, because the
+  compositor decides which window is in front. A controller that asks for the
+  library focus thus moves the focus only inside the active window. Wayland
+  also ignores the position of a window, thus only the size comes back.
+- The main window in full screen covers the library window when both are on
+  one screen. Put the two windows on two screens, or leave full screen.
+- To change the shortcut, edit `ViewMenu_ShowLibraryWindow` in the keyboard
+  mapping of your language. A mapping with no such line uses `Ctrl+7`.
