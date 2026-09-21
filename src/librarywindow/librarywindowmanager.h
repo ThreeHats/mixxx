@@ -40,8 +40,9 @@ class LibraryWindowManager : public QObject {
 
   private slots:
     void slotShowControlChanged(double value);
-    /// The connection of this slot is queued, thus the value can be old.
-    void slotMaximizedControlChanged(double value);
+    /// The connection of this slot is queued, thus it reads the control and
+    /// not the value that came with the signal.
+    void slotMaximizedControlChanged();
 
   private:
     /// One place of the skin that can show the library. A skin has one place

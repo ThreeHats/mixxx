@@ -81,10 +81,10 @@ void LibraryWindowManager::slotShowControlChanged(double value) {
     }
 }
 
-void LibraryWindowManager::slotMaximizedControlChanged(double value) {
+void LibraryWindowManager::slotMaximizedControlChanged() {
     // The maximized page of a skin holds the small decks and the place of the
     // library. While the library is out, that page shows almost nothing.
-    if (value > 0.0 && isDetached() && m_pMaximizedControl->toBool()) {
+    if (isDetached() && m_pMaximizedControl->toBool()) {
         m_pMaximizedControl->set(0.0);
     }
 }

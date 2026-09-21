@@ -294,6 +294,21 @@ TEST_F(LibraryWindowManagerTest, AMaximizeRequestDoesNothingWhileTheLibraryIsOut
     EXPECT_TRUE(m_pManager->isDetached());
 }
 
+TEST_F(LibraryWindowManagerTest, ALateMaximizeRequestLeavesTheLibraryBackAlone) {
+    // The manager takes the control through the event loop, thus the slot must
+    // read the state of the window and not the state at the time of the set.
+    m_pManager->setSkin(m_pSkinRoot);
+    setShow(true);
+    ASSERT_TRUE(m_pManager->isDetached());
+
+    m_pMaximizedControl->set(1.0);
+    setShow(false);
+    QApplication::processEvents();
+
+    EXPECT_FALSE(m_pManager->isDetached());
+    EXPECT_TRUE(m_pMaximizedControl->toBool());
+}
+
 TEST_F(LibraryWindowManagerTest, TheLibraryBackGivesTheMaximizedPageBack) {
     m_pManager->setSkin(m_pSkinRoot);
     setShow(true);
