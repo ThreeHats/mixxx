@@ -29,6 +29,7 @@ position and the same screen.
 | Control | Type | Default | Use |
 |---|---|---|---|
 | `[Skin],show_library_window` | toggle button, persistent | 0 | 1 puts the library in its own window |
+| `[Skin],show_maximized_library` | toggle button, persistent | 0 | 1 shows the maximized page. The alias is `[Master],maximize_library`. The fork keeps it at 0 while the library is out |
 
 A controller mapping can bind the control. The control is in the `[Skin]`
 group with `show_maximized_library` and the other view controls, and Mixxx
@@ -83,14 +84,26 @@ The maximized page of a skin holds the small decks and the place of the
 library. While the library is in its own window, that place is empty, thus the
 page shows almost nothing. The fork stops the page in that state:
 
-- The control `[Skin],show_maximized_library` stays 0. A controller mapping or
-  a skin button that sets it to 1 gets 0 back, before the window draws the
-  page. The `Space` key does nothing, because the menu entry is off.
-- The View menu entry "Maximize Library" is grey.
+- The View menu entry "Maximize Library" is grey, thus the `Space` key does
+  nothing.
+- The control `[Skin],show_maximized_library` gets 0 back on the next turn of
+  the event loop. A controller pad, a skin button such as "BIG LIBRARY" of
+  LateNight, or the alias `[Master],maximize_library` that a controller
+  mapping uses, can still set it to 1. The skin thus goes to the maximized
+  page and comes back one turn later. In most cases the window draws neither
+  page, because the turn comes before the next frame. On a slow frame you see
+  the page one time. The waveforms of the main window go away and come back
+  with it, and the keyboard focus can move.
 - A library that goes out while the page is maximized gives the usual page
-  back first.
+  back first. The state does not come back when the library returns: the
+  control keeps the value 0 until something sets it again.
 
 The toggle works as before when the library comes back to the main window.
+
+`show_maximized_library` is a persistent control: Mixxx writes the value to
+`mixxx.cfg`. Each stock skin sets the control to 0 in its `skin.xml` when it
+loads, thus the value of the last run does not come back on the screen. A
+library that goes out also writes 0 to the file.
 
 ## The skins
 
