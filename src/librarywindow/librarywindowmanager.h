@@ -5,7 +5,6 @@
 #include <QPointer>
 #include <memory>
 
-#include "preferences/configobject.h"
 #include "preferences/usersettings.h"
 #include "util/parented_ptr.h"
 
@@ -20,16 +19,15 @@ class WSingletonContainer;
 class LibraryWindowManager : public QObject {
     Q_OBJECT
   public:
-    static const ConfigKey kShowConfigKey;
-
     LibraryWindowManager(UserSettingsPointer pConfig,
             QWidget* pMainWindow,
             std::shared_ptr<KeyboardEventFilter> pKeyboard,
             QObject* pParent = nullptr);
     ~LibraryWindowManager() override;
 
-    /// Take the library area of a skin that is now in the main window.
-    /// Open the window again if the control asks for it.
+    /// Take the library area of a skin that is now in the main window, and
+    /// open the window again if the control asks for it. A null skin, or a
+    /// skin with no library singleton, turns the control off.
     void setSkin(QWidget* pSkinRoot);
 
     /// Put the library back in the skin. Call this before the skin goes away
@@ -42,12 +40,22 @@ class LibraryWindowManager : public QObject {
 
   private slots:
     void slotShowControlChanged(double value);
-    void slotCloseRequested();
 
   private:
+    /// One place of the skin that can show the library. A skin has one place
+    /// for each page that holds the library.
+    struct LibrarySlot {
+        QPointer<WSingletonContainer> pContainer;
+        /// The skin kept this place hidden before the library went out.
+        bool wasHidden;
+    };
+
     void detach();
     void attach();
-    QWidget* findLibraryContainer(QWidget* pSkinRoot);
+    void onCloseRequested(quint64 generation);
+    /// Look for the library area of the skin, and keep it together with the
+    /// places that show it. Return false if the skin has no such area.
+    bool collectLibraryArea(QWidget* pSkinRoot);
     WSingletonContainer* visibleContainer() const;
 
     const UserSettingsPointer m_pConfig;
@@ -56,13 +64,11 @@ class LibraryWindowManager : public QObject {
 
     QPointer<QWidget> m_pSkinRoot;
     QPointer<QWidget> m_pLibraryContainer;
-    /// The places of the skin that can hold the library. The skins put the
-    /// library in a singleton, thus one skin has one place for each page.
-    QList<QPointer<WSingletonContainer>> m_containers;
-    /// The stand-in that keeps the place of the library in a skin that has no
-    /// library singleton.
-    QPointer<QWidget> m_pPlaceholder;
+    QList<LibrarySlot> m_slots;
 
     std::unique_ptr<WLibraryWindow> m_pWindow;
+    /// The count of windows that the manager made. A close that arrives late
+    /// names the window that asked for it.
+    quint64 m_windowGeneration;
     parented_ptr<ControlProxy> m_pShowControl;
 };

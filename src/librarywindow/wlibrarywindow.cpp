@@ -9,35 +9,16 @@
 #include <QVBoxLayout>
 
 #include "defs_urls.h"
-#include "librarywindow/librarywindowplacement.h"
 #include "moc_wlibrarywindow.cpp"
 #include "util/assert.h"
 
 namespace {
 
-const QString kGroup = QStringLiteral("[LibraryWindow]");
-const ConfigKey kGeometryConfigKey(kGroup, QStringLiteral("geometry"));
-const ConfigKey kScreenConfigKey(kGroup, QStringLiteral("screen"));
-const ConfigKey kStateConfigKey(kGroup, QStringLiteral("state"));
+const ConfigKey kGeometryConfigKey(
+        QStringLiteral("[LibraryWindow]"), QStringLiteral("geometry"));
 
-const QString kStateNormal = QStringLiteral("normal");
-const QString kStateMaximized = QStringLiteral("maximized");
-const QString kStateFullScreen = QStringLiteral("fullscreen");
-
-QList<LibraryWindowPlacement::Screen> desktopScreens() {
-    QList<LibraryWindowPlacement::Screen> screens;
-    const auto qScreens = QGuiApplication::screens();
-    screens.reserve(qScreens.size());
-    for (const QScreen* pScreen : qScreens) {
-        screens.append({pScreen->name(), pScreen->geometry()});
-    }
-    return screens;
-}
-
-QString primaryScreenName() {
-    const QScreen* pScreen = QGuiApplication::primaryScreen();
-    return pScreen ? pScreen->name() : QString();
-}
+constexpr int kDefaultWidth = 1000;
+constexpr int kDefaultHeight = 700;
 
 } // namespace
 
@@ -50,8 +31,6 @@ WLibraryWindow::WLibraryWindow(UserSettingsPointer pConfig)
     setWindowIcon(QIcon(MIXXX_ICON_PATH));
     // The main window alone decides when Mixxx stops.
     setAttribute(Qt::WA_QuitOnClose, false);
-    setMinimumSize(LibraryWindowPlacement::kMinimumWidth,
-            LibraryWindowPlacement::kMinimumHeight);
     m_pLayout->setContentsMargins(0, 0, 0, 0);
     m_pLayout->setSpacing(0);
 
@@ -96,43 +75,28 @@ void WLibraryWindow::applyStyle(const QString& baseStyleSheet,
 }
 
 void WLibraryWindow::restorePlacement() {
-    const QRect savedGeometry = LibraryWindowPlacement::parseGeometry(
-            m_pConfig->getValueString(kGeometryConfigKey));
-    const QString savedScreen = m_pConfig->getValueString(kScreenConfigKey);
-    setGeometry(LibraryWindowPlacement::resolveGeometry(
-            savedGeometry, savedScreen, desktopScreens(), primaryScreenName()));
-
-    const QString state = m_pConfig->getValueString(kStateConfigKey);
-    if (state == kStateFullScreen) {
-        showFullScreen();
-    } else if (state == kStateMaximized) {
-        showMaximized();
-    } else {
-        showNormal();
+    // restoreGeometry() keeps the frame, the screen, the scale and the
+    // maximized or full screen state, and it refuses a value that does not fit.
+    const QByteArray geometry = QByteArray::fromBase64(
+            m_pConfig->getValueString(kGeometryConfigKey).toUtf8());
+    if (geometry.isEmpty() || !restoreGeometry(geometry)) {
+        const QScreen* pScreen = QGuiApplication::primaryScreen();
+        const QRect area = pScreen ? pScreen->availableGeometry()
+                                   : QRect(0, 0, kDefaultWidth, kDefaultHeight);
+        resize(qMin(kDefaultWidth, area.width()), qMin(kDefaultHeight, area.height()));
+        move(area.center() - rect().center());
     }
+    show();
 }
 
 void WLibraryWindow::savePlacement() {
-    QString state = kStateNormal;
-    if (isFullScreen()) {
-        state = kStateFullScreen;
-    } else if (isMaximized()) {
-        state = kStateMaximized;
-    }
-    QRect rect = (state == kStateNormal) ? geometry() : normalGeometry();
-    if (!rect.isValid()) {
-        rect = geometry();
-    }
-    m_pConfig->set(kGeometryConfigKey,
-            ConfigValue(LibraryWindowPlacement::formatGeometry(rect)));
-    m_pConfig->set(kScreenConfigKey,
-            ConfigValue(LibraryWindowPlacement::screenNameFor(geometry(), desktopScreens())));
-    m_pConfig->set(kStateConfigKey, ConfigValue(state));
+    m_pConfig->set(kGeometryConfigKey, ConfigValue(QString(saveGeometry().toBase64())));
 }
 
 void WLibraryWindow::closeEvent(QCloseEvent* pEvent) {
-    // The manager takes the library back and deletes the window. Refuse the
-    // close, because the library must not go away with the window.
-    pEvent->ignore();
+    // Accept the close, because a window that refuses one also stops the
+    // logout of the desktop session. The manager takes the library back.
+    savePlacement();
+    QWidget::closeEvent(pEvent);
     emit closeRequested();
 }

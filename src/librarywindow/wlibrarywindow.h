@@ -25,8 +25,9 @@ class WLibraryWindow : public QWidget {
             const QString& skinStyleSheet,
             const QPalette& palette);
 
-    /// Put the window where it was, on the screen that it was on. If that
-    /// screen is absent, put the window on the primary screen.
+    /// Put the window where it was and show it. On the first use, and when the
+    /// saved geometry does not fit the screens of now, the window gets a
+    /// default size in the center of the primary screen.
     void restorePlacement();
     void savePlacement();
 
