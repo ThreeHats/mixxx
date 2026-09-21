@@ -5,10 +5,10 @@
 
 #include "library/dao/trackschema.h"
 #include "library/starrating.h"
-#include "library/tabledelegates/stardelegate.h"
 #include "library/trackcollection.h"
 #include "library/trackcollectionmanager.h"
 #include "moc_relatedtrackstablemodel.cpp"
+#include "muxic/relatedtracks/relationratingdelegate.h"
 #include "muxic/relatedtracks/relationsuggester.h"
 #include "muxic/relatedtracks/relationtypedelegate.h"
 #include "muxic/relatedtracks/trackrelationschema.h"
@@ -16,7 +16,7 @@
 #include "track/track.h"
 #include "util/db/fwdsqlquery.h"
 
-using namespace muxic;
+namespace muxic {
 
 namespace {
 
@@ -98,8 +98,6 @@ QString formatTrackColumns() {
 
 } // anonymous namespace
 
-namespace muxic {
-
 RelatedTracksTableModel::RelatedTracksTableModel(
         QObject* pParent,
         TrackCollectionManager* pTrackCollectionManager)
@@ -109,14 +107,33 @@ RelatedTracksTableModel::RelatedTracksTableModel(
                   "mixxx.db.model.relatedtracks") {
 }
 
+void RelatedTracksTableModel::storeSearchText() {
+    if (!initialized()) {
+        return;
+    }
+    const QString searchText = currentSearch();
+    const int modeKey = static_cast<int>(m_mode);
+    if (searchText.trimmed().isEmpty()) {
+        m_searchTexts.remove(modeKey);
+    } else {
+        m_searchTexts.insert(modeKey, searchText);
+    }
+}
+
 void RelatedTracksTableModel::setRelationTable(const QString& tableName,
         const QString& viewQuery) {
-    // The reference track of a view can change between two selects, thus
-    // the old view of that name has to go first.
-    FwdSqlQuery(m_database,
-            QStringLiteral("DROP VIEW IF EXISTS %1").arg(tableName))
-            .execPrepared();
-    FwdSqlQuery(m_database, viewQuery).execPrepared();
+    // A DROP and a CREATE throw away every prepared statement of the
+    // connection. Write the view only when its text changes.
+    if (m_viewQueries.value(tableName) != viewQuery) {
+        FwdSqlQuery(m_database,
+                QStringLiteral("DROP VIEW IF EXISTS %1").arg(tableName))
+                .execPrepared();
+        if (FwdSqlQuery(m_database, viewQuery).execPrepared()) {
+            m_viewQueries.insert(tableName, viewQuery);
+        } else {
+            m_viewQueries.remove(tableName);
+        }
+    }
 
     QStringList columns;
     columns << LIBRARYTABLE_ID
@@ -151,12 +168,13 @@ void RelatedTracksTableModel::setRelationTable(const QString& tableName,
                 TrackModel::kHeaderWidthRole);
     }
 
-    setSearch(QString());
+    setSearch(m_searchTexts.value(static_cast<int>(m_mode)));
     setDefaultSort(fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_ARTIST), Qt::AscendingOrder);
     select();
 }
 
 void RelatedTracksTableModel::selectAllRelated() {
+    storeSearchText();
     m_mode = Mode::AllRelated;
     m_referenceTrackId = TrackId();
 
@@ -189,10 +207,11 @@ void RelatedTracksTableModel::selectRelatedTo(TrackId trackId) {
         selectAllRelated();
         return;
     }
+    storeSearchText();
     m_mode = Mode::RelatedTo;
     m_referenceTrackId = trackId;
 
-    const QString tableName = QStringLiteral("muxic_related_%1").arg(trackId.toString());
+    const QString tableName = QStringLiteral("muxic_related_to");
     const QString relationColumns =
             QStringLiteral(
                     "rel.%1 AS %2,rel.%3 AS %4,rel.%5 AS %6,"
@@ -232,6 +251,7 @@ void RelatedTracksTableModel::selectRelatedTo(TrackId trackId) {
 }
 
 void RelatedTracksTableModel::selectSuggestedFor(TrackId trackId) {
+    storeSearchText();
     m_mode = Mode::SuggestedFor;
     m_referenceTrackId = trackId;
 
@@ -263,13 +283,15 @@ void RelatedTracksTableModel::selectSuggestedFor(TrackId trackId) {
     }
 
     const QString tableName = QStringLiteral("muxic_suggested");
+    // This view reads the whole library. A count of the relations of each
+    // row costs more than the rest of the query.
     const QString relationColumns =
-            QStringLiteral("'' AS %1,NULL AS %2,'' AS %3,'' AS %4,")
+            QStringLiteral("'' AS %1,NULL AS %2,'' AS %3,'' AS %4,NULL AS %5")
                     .arg(kRelationTypeColumn,
                             kRelationRatingColumn,
                             kRelationNotesColumn,
-                            kRelationDirectionColumn) +
-            formatRelationCountColumn();
+                            kRelationDirectionColumn,
+                            kRelationCountColumn);
     const QString viewQuery =
             QStringLiteral(
                     "CREATE TEMPORARY VIEW IF NOT EXISTS %1 AS SELECT %2,%3 "
@@ -301,27 +323,34 @@ void RelatedTracksTableModel::removeTracks(const QModelIndexList& indices) {
     if (indices.isEmpty()) {
         return;
     }
-    TrackRelationStorage& storage =
-            m_pTrackCollectionManager->internalCollection()->trackRelations();
-
-    QSet<TrackId> removedTrackIds;
+    // A write reports the change and the view can move its rows. Read
+    // each row before the first write.
+    QList<TrackId> trackIds;
+    QSet<TrackId> uniqueTrackIds;
     for (const QModelIndex& index : indices) {
         const TrackId trackId = getTrackId(index);
-        if (!trackId.isValid()) {
-            continue;
-        }
-        if (m_mode == Mode::RelatedTo && m_referenceTrackId.isValid()) {
-            if (storage.removeRelation(m_referenceTrackId, trackId)) {
-                removedTrackIds.insert(trackId);
-            }
-        } else if (m_mode == Mode::AllRelated) {
-            if (storage.removeAllRelationsOfTracks(QList<TrackId>{trackId})) {
-                removedTrackIds.insert(trackId);
-            }
+        if (trackId.isValid() && !uniqueTrackIds.contains(trackId)) {
+            uniqueTrackIds.insert(trackId);
+            trackIds.append(trackId);
         }
     }
-    if (!removedTrackIds.isEmpty()) {
-        removeTrackRows(removedTrackIds);
+    if (trackIds.isEmpty()) {
+        return;
+    }
+
+    if (showsOneRelationPerRow()) {
+        QList<TrackIdPair> pairs;
+        pairs.reserve(trackIds.size());
+        for (const auto& trackId : std::as_const(trackIds)) {
+            pairs.append(qMakePair(m_referenceTrackId, trackId));
+        }
+        if (storage().removeRelations(pairs) > 0) {
+            removeTrackRows(uniqueTrackIds);
+        }
+        return;
+    }
+    if (m_mode == Mode::AllRelated && storage().removeAllRelationsOfTracks(trackIds) > 0) {
+        removeTrackRows(uniqueTrackIds);
     }
 }
 
@@ -338,7 +367,9 @@ TrackModel::Capabilities RelatedTracksTableModel::getCapabilities() const {
             Capability::Properties |
             Capability::Sorting;
 
-    if (m_mode != Mode::SuggestedFor) {
+    // The root node holds every relation. A Remove there would wipe the
+    // table, thus only a view with one relation per row offers it.
+    if (showsOneRelationPerRow()) {
         caps |= Capability::Remove;
     }
     return caps;
@@ -395,7 +426,9 @@ bool RelatedTracksTableModel::writeRelationColumn(
         relation.setNotes(value.toString());
         storedValue = relation.getNotes();
     }
-    if (!storage().saveRelation(relation)) {
+    // The view holds the row that the edit changes. The storage reports
+    // nothing and the cache of the row takes the new value.
+    if (!storage().updateRelationFields(relation)) {
         return false;
     }
     setTableColumnValue(index.row(), column, storedValue);
@@ -449,7 +482,7 @@ QAbstractItemDelegate* RelatedTracksTableModel::delegateForColumn(
     auto* pTableView = qobject_cast<QTableView*>(pParent);
     if (pTableView) {
         if (column == fieldIndex(kRelationRatingColumn)) {
-            return new StarDelegate(pTableView);
+            return new RelationRatingDelegate(pTableView);
         }
         if (column == fieldIndex(kRelationTypeColumn)) {
             return new RelationTypeDelegate(pTableView, this);
@@ -463,8 +496,10 @@ int RelatedTracksTableModel::setRelationsBidirectional(
     if (!showsOneRelationPerRow()) {
         return 0;
     }
+    // A write reports the change and the view can move its rows. Read
+    // each relation before the first write.
     QSet<int> rows;
-    int changed = 0;
+    QList<TrackRelation> relations;
     for (const QModelIndex& index : indices) {
         if (!index.isValid() || rows.contains(index.row())) {
             continue;
@@ -478,11 +513,9 @@ int RelatedTracksTableModel::setRelationsBidirectional(
             continue;
         }
         relation.setBidirectional(bidirectional);
-        if (storage().saveRelation(relation)) {
-            ++changed;
-        }
+        relations.append(relation);
     }
-    return changed;
+    return storage().saveRelations(relations);
 }
 
 QStringList RelatedTracksTableModel::knownRelationTypes() const {

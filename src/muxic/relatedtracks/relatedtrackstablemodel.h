@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QStringList>
 
 #include "library/trackset/tracksettablemodel.h"
@@ -66,8 +67,8 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
     /// Reads the relation of the row. Returns false without a relation.
     bool relationForIndex(const QModelIndex& index, TrackRelation* pRelation) const;
 
-    /// Sets the direction of the relations of the rows. Returns the number of
-    /// relations that changed.
+    /// Sets the direction of the relations of the rows. Returns the count
+    /// of the relations that changed.
     int setRelationsBidirectional(const QModelIndexList& indices, bool bidirectional);
 
     /// The relation types of the table and the types that the menu offers.
@@ -78,11 +79,17 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
 
   private:
     void setRelationTable(const QString& tableName, const QString& viewQuery);
+    void storeSearchText();
     TrackRelationStorage& storage() const;
     bool writeRelationColumn(const QModelIndex& index, const QVariant& value);
 
     Mode m_mode = Mode::AllRelated;
     TrackId m_referenceTrackId;
+    /// The text of the last CREATE VIEW of each view name. A view only has
+    /// to go and come back when its text changes.
+    QHash<QString, QString> m_viewQueries;
+    /// The search text of the user, one per mode.
+    QHash<int, QString> m_searchTexts;
 };
 
 } // namespace muxic

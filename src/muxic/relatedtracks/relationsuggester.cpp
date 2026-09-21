@@ -23,33 +23,9 @@ QList<RelationSuggester::BpmRange> RelationSuggester::bpmRanges(
 }
 
 // static
-bool RelationSuggester::matchesBpm(
-        double bpm,
-        double referenceBpm,
-        double tolerance) {
-    if (bpm <= 0.0) {
-        return false;
-    }
-    const QList<BpmRange> ranges = bpmRanges(referenceBpm, tolerance);
-    for (const auto& range : ranges) {
-        if (bpm >= range.lower && bpm <= range.upper) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// static
 QList<mixxx::track::io::key::ChromaticKey> RelationSuggester::compatibleKeys(
         mixxx::track::io::key::ChromaticKey referenceKey) {
     return KeyUtils::getCompatibleKeys(referenceKey);
-}
-
-// static
-bool RelationSuggester::matchesKey(
-        mixxx::track::io::key::ChromaticKey key,
-        mixxx::track::io::key::ChromaticKey referenceKey) {
-    return compatibleKeys(referenceKey).contains(key);
 }
 
 } // namespace muxic

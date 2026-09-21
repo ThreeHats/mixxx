@@ -27,6 +27,9 @@ class Library;
 class TrackModel;
 class WColorPickerAction;
 class WCoverArtMenu;
+namespace muxic {
+class RelatedTracksMenu;
+} // namespace muxic
 class WFindOnWebMenu;
 class WSearchRelatedTracksMenu;
 class WStarRatingAction;
@@ -187,13 +190,6 @@ class WTrackMenu : public QMenu {
     void slotPopulateCrateMenu();
     void addSelectionToNewCrate();
 
-    // Related tracks
-    void relateSelectionToTrack(TrackId targetTrackId);
-    void setRelationsBidirectional(bool bidirectional);
-    void slotPopulateRelateToMenu();
-    void slotRemoveRelations();
-    void slotShowRelatedTracks();
-
     // Auto DJ
     void slotAddToAutoDJBottom();
     void slotAddToAutoDJTop();
@@ -298,7 +294,6 @@ class WTrackMenu : public QMenu {
     parented_ptr<QMenu> m_pSamplerMenu;
     parented_ptr<QMenu> m_pPlaylistMenu;
     parented_ptr<QMenu> m_pCrateMenu;
-    parented_ptr<QMenu> m_pRelateToMenu;
     parented_ptr<QMenu> m_pMetadataMenu;
     parented_ptr<QMenu> m_pMetadataUpdateExternalCollectionsMenu;
     parented_ptr<QMenu> m_pHotcueMenu;
@@ -308,6 +303,7 @@ class WTrackMenu : public QMenu {
     parented_ptr<QMenu> m_pColorMenu;
     parented_ptr<WCoverArtMenu> m_pCoverMenu;
     parented_ptr<WSearchRelatedTracksMenu> m_pSearchRelatedMenu;
+    parented_ptr<muxic::RelatedTracksMenu> m_pRelatedTracksMenu;
     parented_ptr<QMenu> m_pFindOnWebMenu;
     parented_ptr<FindOnWebLast> m_pFindOnWebLastAct;
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
@@ -346,12 +342,6 @@ class WTrackMenu : public QMenu {
 
     // Select track in library
     parented_ptr<QAction> m_pSelectInLibraryAct;
-
-    // Related tracks
-    parented_ptr<QAction> m_pRemoveRelationsAct;
-    parented_ptr<QAction> m_pShowRelatedTracksAct;
-    parented_ptr<QAction> m_pRelateBothWaysAct;
-    parented_ptr<QAction> m_pRelateOneWayAct;
 
     // BPM feature
     parented_ptr<QAction> m_pBpmLockAction;
@@ -417,7 +407,6 @@ class WTrackMenu : public QMenu {
     bool m_bFindOnWebMenuLoaded;
     bool m_bPlaylistMenuLoaded;
     bool m_bCrateMenuLoaded;
-    bool m_bRelateToMenuLoaded;
 
     Features m_eActiveFeatures;
     const Features m_eTrackModelFeatures;

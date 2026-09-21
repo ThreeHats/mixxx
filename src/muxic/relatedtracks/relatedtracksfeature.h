@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QMetaType>
 #include <QModelIndex>
+#include <QTimer>
 #include <QVariant>
 #include <memory>
 
@@ -13,10 +15,34 @@
 class ControlProxy;
 class ControlPushButton;
 class Library;
+class QAbstractItemModel;
 
 namespace muxic {
 
 class TrackRelationStorage;
+
+/// What a sidebar node of the feature shows.
+enum class RelatedNodeKind {
+    Root,
+    RelatedToSelected,
+    RelatedToDeck,
+    SuggestedForSelected,
+    SuggestedForDeck,
+};
+
+/// The payload of a sidebar node.
+struct RelatedNode {
+    RelatedNodeKind kind = RelatedNodeKind::Root;
+    /// The deck number, one based, of a deck node.
+    int deckNumber = 0;
+
+    bool operator==(const RelatedNode& other) const {
+        return kind == other.kind && deckNumber == other.deckNumber;
+    }
+    bool operator!=(const RelatedNode& other) const {
+        return !(*this == other);
+    }
+};
 
 /// The sidebar node that shows the tracks that go with a reference track.
 class RelatedTracksFeature : public BaseTrackSetFeature {
@@ -50,41 +76,35 @@ class RelatedTracksFeature : public BaseTrackSetFeature {
     void slotRelationsChanged();
     void slotNumDecksChanged(double numDecks);
     void slotRelateActiveDecks(double value);
+    void slotRefreshTimeout();
 
   private:
-    /// What a sidebar node shows.
-    enum class NodeKind {
-        Root,
-        RelatedToSelected,
-        RelatedToDeck,
-        SuggestedForSelected,
-        SuggestedForDeck,
-    };
-
-    struct Node {
-        NodeKind kind = NodeKind::Root;
-        /// The deck number, one based, for a deck node.
-        int deckNumber = 0;
-    };
-
-    static QVariant nodeToVariant(const Node& node);
-    static Node nodeFromVariant(const QVariant& data);
-
     void rebuildChildModel();
     /// The label of a deck node: the deck and the track on it.
     QString deckLabel(int deckNumber) const;
     void updateDeckLabel(int deckNumber);
-    void showNode(const Node& node);
-    /// Reads the table again when the shown node depends on the track.
-    void refreshForTrackOfNode(const Node& node);
-    TrackId referenceTrackIdOf(const Node& node) const;
+
+    /// Reads the table of the node. The view keeps the model that it shows.
+    void selectNode(const RelatedNode& node);
+    /// Reads the table and gives the model to the view. Only a click of the
+    /// user goes through here.
+    void showNode(const RelatedNode& node);
+    /// Starts the timer that reads the table again. A selection in the
+    /// library moves while the user scrolls, thus the read waits.
+    void scheduleRefresh(const RelatedNode& node);
+
+    TrackId referenceTrackIdOf(const RelatedNode& node) const;
     QModelIndex indexOfSelectedTrackNode() const;
 
-    TrackRelationStorage& storage() const;
+    const TrackRelationStorage& storage() const;
+    TrackRelationStorage& storage();
 
     RelatedTracksTableModel m_tableModel;
     TrackId m_selectedTrackId;
-    Node m_shownNode;
+    RelatedNode m_shownNode;
+    /// True while the view shows the model of this feature.
+    bool m_modelIsVisible;
+    QTimer m_refreshTimer;
 
     std::unique_ptr<ControlPushButton> m_pRelateActiveDecksControl;
     std::unique_ptr<ControlProxy> m_pNumDecksControl;
@@ -92,3 +112,5 @@ class RelatedTracksFeature : public BaseTrackSetFeature {
 };
 
 } // namespace muxic
+
+Q_DECLARE_METATYPE(muxic::RelatedNode)

@@ -2,6 +2,7 @@
 
 #include <QList>
 #include <QObject>
+#include <QPair>
 #include <QSet>
 #include <QSqlDatabase>
 #include <QStringList>
@@ -13,10 +14,14 @@
 
 namespace muxic {
 
+/// A pair of tracks, in the order that the caller gives.
+using TrackIdPair = QPair<TrackId, TrackId>;
+
 /// Holds the relations between tracks that mix well.
 ///
 /// This class makes its table when the database opens. Both ends of a
-/// relation are `library.id` values.
+/// relation are `library.id` values. A pair of tracks has at most one row,
+/// which a unique index on the unordered pair enforces.
 class TrackRelationStorage : public QObject, public virtual /*implements*/ SqlStorage {
     Q_OBJECT
 
@@ -35,17 +40,28 @@ class TrackRelationStorage : public QObject, public virtual /*implements*/ SqlSt
     // Write operations
     /////////////////////////////////////////////////////////////////////////
 
-    /// Writes the relation and reports the change.
-    ///
-    /// A pair of tracks has one row. A save on the reverse pair sets that
-    /// row to both ways. A relation of a track with itself fails.
+    /// Writes one relation. A save on the reverse pair sets that row to
+    /// both ways. A relation of a track with itself fails.
     bool saveRelation(const TrackRelation& relation);
+
+    /// Writes the relations in one transaction and reports one change.
+    /// Returns the number of relations that it wrote.
+    int saveRelations(const QList<TrackRelation>& relations);
+
+    /// Writes the type, the rating and the note of a relation that exists.
+    /// Reports nothing: the caller holds the row that it edits.
+    bool updateRelationFields(const TrackRelation& relation);
 
     /// Removes the relation of the two tracks, in either order.
     bool removeRelation(TrackId trackId1, TrackId trackId2);
 
-    /// Removes each relation that has one of the tracks at an end.
-    bool removeAllRelationsOfTracks(const QList<TrackId>& trackIds);
+    /// Removes the relations of the pairs in one transaction and reports
+    /// one change. Returns the number of rows that it removed.
+    int removeRelations(const QList<TrackIdPair>& pairs);
+
+    /// Removes each relation with one of the tracks at an end.
+    /// Returns the number of rows that it removed.
+    int removeAllRelationsOfTracks(const QList<TrackId>& trackIds);
 
     /// TrackCollection calls this in the purge transaction.
     bool onPurgingTracks(const QList<TrackId>& trackIds);
@@ -63,35 +79,35 @@ class TrackRelationStorage : public QObject, public virtual /*implements*/ SqlSt
             TrackId trackId2,
             TrackRelation* pRelation = nullptr) const;
 
-    /// The relations that lead away from the track.
-    QList<TrackRelation> readRelationsFrom(TrackId trackId) const;
-
     /// The relation types that the table holds, without the empty type.
     QStringList readRelationTypes() const;
 
     uint countRelations() const;
     uint countRelationsOfTrack(TrackId trackId) const;
 
-    /// The tracks of the list that have a relation.
-    QSet<TrackId> collectRelatedTrackIds(const QList<TrackId>& trackIds) const;
+    /// True if one of the tracks has a relation. One query.
+    bool anyTrackHasRelation(const QList<TrackId>& trackIds) const;
 
-    /// A subselect for the ids at the far end of a relation of this track.
-    /// No database access.
-    static QString formatSubselectQueryForRelatedTrackIds(TrackId trackId);
+    /// The number of relations that have one of the tracks at an end.
+    uint countRelationsOfTracks(const QList<TrackId>& trackIds) const;
 
     /// A subselect for the ids of all tracks with a relation.
     static QString formatSubselectQueryForAllRelatedTrackIds();
 
   signals:
-    /// A row was added or removed, or a direction changed. A view reads the
-    /// table again.
+    /// The table changed. A view reads it again.
     void relationsChanged();
-    /// The type, the rating or the note of one relation changed. The rows of
-    /// a view stay the same.
-    void relationUpdated(TrackId trackId1, TrackId trackId2);
 
   private:
-    bool removeRelationWithoutSignal(TrackId trackId1, TrackId trackId2);
+    /// Makes the table and its indices. Folds a duplicate pair first,
+    /// which the unique index of the pair refuses.
+    static void createTableAndIndices(const QSqlDatabase& database);
+
+    /// Writes one relation, without a transaction and without a signal.
+    /// Sets pChanged when the row that it leaves is a new row.
+    bool saveRelationWorker(const TrackRelation& relation, bool* pChanged);
+    int removeRelationsWorker(const QList<TrackIdPair>& pairs);
+    int removeRelationsOfTracksWorker(const QList<TrackId>& trackIds);
 
     QSqlDatabase m_database;
 };

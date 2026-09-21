@@ -30,9 +30,8 @@ inline QStringList defaultTrackRelationTypes() {
 
 /// A relation between two library tracks that mix well.
 ///
-/// The relation leads from the source track to the target track. A relation
-/// that goes both ways is one row, thus a pair of tracks has at most one
-/// relation.
+/// The relation leads from the source track to the target track. A pair of
+/// tracks has at most one relation.
 class TrackRelation final {
   public:
     static constexpr int kMinRating = 0;

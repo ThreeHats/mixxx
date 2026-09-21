@@ -36,26 +36,6 @@ TEST(RelationSuggesterTest, BpmRangesOfAnUnknownTempoAreEmpty) {
     EXPECT_TRUE(RelationSuggester::bpmRanges(-1.0).isEmpty());
 }
 
-TEST(RelationSuggesterTest, MatchesBpmWithinThreePercent) {
-    EXPECT_TRUE(RelationSuggester::matchesBpm(128.0, 128.0));
-    EXPECT_TRUE(RelationSuggester::matchesBpm(131.8, 128.0));
-    EXPECT_TRUE(RelationSuggester::matchesBpm(124.2, 128.0));
-    EXPECT_FALSE(RelationSuggester::matchesBpm(133.0, 128.0));
-    EXPECT_FALSE(RelationSuggester::matchesBpm(123.0, 128.0));
-}
-
-TEST(RelationSuggesterTest, MatchesBpmAtHalfAndDoubleTime) {
-    EXPECT_TRUE(RelationSuggester::matchesBpm(64.0, 128.0));
-    EXPECT_TRUE(RelationSuggester::matchesBpm(256.0, 128.0));
-    EXPECT_TRUE(RelationSuggester::matchesBpm(174.0, 87.0));
-    EXPECT_FALSE(RelationSuggester::matchesBpm(96.0, 128.0));
-}
-
-TEST(RelationSuggesterTest, MatchesBpmRefusesAnUnknownTempo) {
-    EXPECT_FALSE(RelationSuggester::matchesBpm(0.0, 128.0));
-    EXPECT_FALSE(RelationSuggester::matchesBpm(128.0, 0.0));
-}
-
 TEST(RelationSuggesterTest, CompatibleKeysOfAnUnknownKeyAreEmpty) {
     EXPECT_TRUE(RelationSuggester::compatibleKeys(
             mixxx::track::io::key::INVALID)
@@ -75,6 +55,14 @@ TEST(RelationSuggesterTest, EveryKeyHasSixCamelotNeighbours) {
     }
 }
 
+namespace {
+
+bool keyIsCompatible(ChromaticKey key, ChromaticKey referenceKey) {
+    return RelationSuggester::compatibleKeys(referenceKey).contains(key);
+}
+
+} // anonymous namespace
+
 TEST(RelationSuggesterTest, CamelotNeighboursOfEveryKey) {
     for (int i = 0; i < kNumKeys; ++i) {
         const ChromaticKey key = keyAt(i);
@@ -85,17 +73,17 @@ TEST(RelationSuggesterTest, CamelotNeighboursOfEveryKey) {
 
         // The key itself, the relative major or minor, and one step in each
         // direction on both rings of the wheel.
-        EXPECT_TRUE(RelationSuggester::matchesKey(key, key));
-        EXPECT_TRUE(RelationSuggester::matchesKey(
+        EXPECT_TRUE(keyIsCompatible(key, key));
+        EXPECT_TRUE(keyIsCompatible(
                 KeyUtils::openKeyNumberToKey(wheelNumber, !major), key));
-        EXPECT_TRUE(RelationSuggester::matchesKey(
+        EXPECT_TRUE(keyIsCompatible(
                 KeyUtils::openKeyNumberToKey(stepUp, major), key));
-        EXPECT_TRUE(RelationSuggester::matchesKey(
+        EXPECT_TRUE(keyIsCompatible(
                 KeyUtils::openKeyNumberToKey(stepDown, major), key));
 
         // Two steps away on the wheel does not mix.
         const int twoStepsUp = stepUp == 12 ? 1 : stepUp + 1;
-        EXPECT_FALSE(RelationSuggester::matchesKey(
+        EXPECT_FALSE(keyIsCompatible(
                 KeyUtils::openKeyNumberToKey(twoStepsUp, major), key));
     }
 }
@@ -105,8 +93,8 @@ TEST(RelationSuggesterTest, MatchesKeyIsSymmetric) {
         const ChromaticKey key1 = keyAt(i);
         for (int j = 0; j < kNumKeys; ++j) {
             const ChromaticKey key2 = keyAt(j);
-            EXPECT_EQ(RelationSuggester::matchesKey(key1, key2),
-                    RelationSuggester::matchesKey(key2, key1))
+            EXPECT_EQ(keyIsCompatible(key1, key2),
+                    keyIsCompatible(key2, key1))
                     << "keys " << static_cast<int>(key1) << " and "
                     << static_cast<int>(key2);
         }

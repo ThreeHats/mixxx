@@ -31,9 +31,7 @@
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "moc_wtrackmenu.cpp"
-#include "muxic/relatedtracks/relatedtrackstablemodel.h"
-#include "muxic/relatedtracks/trackrelation.h"
-#include "muxic/relatedtracks/trackrelationstorage.h"
+#include "muxic/relatedtracks/relatedtracksmenu.h"
 #include "preferences/colorpalettesettings.h"
 #include "preferences/configobject.h"
 #include "preferences/dialog/dlgprefdeck.h"
@@ -122,7 +120,6 @@ WTrackMenu::WTrackMenu(
           m_bFindOnWebMenuLoaded(false),
           m_bPlaylistMenuLoaded(false),
           m_bCrateMenuLoaded(false),
-          m_bRelateToMenuLoaded(false),
           m_eActiveFeatures(flags),
           m_eTrackModelFeatures(Feature::TrackModelFeatures) {
     // Warn if any of the chosen features depend on a TrackModel
@@ -198,13 +195,7 @@ void WTrackMenu::createMenus() {
     }
 
     if (featureIsEnabled(Feature::RelatedTracks)) {
-        m_pRelateToMenu = make_parented<QMenu>(this);
-        m_pRelateToMenu->setTitle(tr("Relate to"));
-        m_pRelateToMenu->setObjectName("RelateToMenu");
-        connect(m_pRelateToMenu,
-                &QMenu::aboutToShow,
-                this,
-                &WTrackMenu::slotPopulateRelateToMenu);
+        m_pRelatedTracksMenu = make_parented<muxic::RelatedTracksMenu>(this, m_pLibrary);
     }
 
     if (featureIsEnabled(Feature::Metadata)) {
@@ -414,30 +405,6 @@ void WTrackMenu::createActions() {
     if (featureIsEnabled(Feature::SelectInLibrary)) {
         m_pSelectInLibraryAct = make_parented<QAction>(tr("Select in Library"), this);
         connect(m_pSelectInLibraryAct, &QAction::triggered, this, &WTrackMenu::slotSelectInLibrary);
-    }
-
-    if (featureIsEnabled(Feature::RelatedTracks)) {
-        m_pRemoveRelationsAct = make_parented<QAction>(tr("Remove Relations"), this);
-        connect(m_pRemoveRelationsAct,
-                &QAction::triggered,
-                this,
-                &WTrackMenu::slotRemoveRelations);
-
-        m_pShowRelatedTracksAct = make_parented<QAction>(tr("Show Related Tracks"), this);
-        connect(m_pShowRelatedTracksAct,
-                &QAction::triggered,
-                this,
-                &WTrackMenu::slotShowRelatedTracks);
-
-        m_pRelateBothWaysAct = make_parented<QAction>(tr("Relate Both Ways"), this);
-        connect(m_pRelateBothWaysAct, &QAction::triggered, this, [this] {
-            setRelationsBidirectional(true);
-        });
-
-        m_pRelateOneWayAct = make_parented<QAction>(tr("Relate One Way"), this);
-        connect(m_pRelateOneWayAct, &QAction::triggered, this, [this] {
-            setRelationsBidirectional(false);
-        });
     }
 
     if (featureIsEnabled(Feature::Metadata)) {
@@ -693,10 +660,7 @@ void WTrackMenu::setupActions() {
     }
 
     if (featureIsEnabled(Feature::RelatedTracks)) {
-        addMenu(m_pRelateToMenu);
-        addAction(m_pRelateBothWaysAct);
-        addAction(m_pRelateOneWayAct);
-        addAction(m_pShowRelatedTracksAct);
+        addMenu(m_pRelatedTracksMenu);
     }
 
     if (featureIsEnabled(Feature::Remove)) {
@@ -1163,45 +1127,7 @@ void WTrackMenu::updateMenus() {
     }
 
     if (featureIsEnabled(Feature::RelatedTracks)) {
-        // The deck entries are lazy loaded on hover by
-        // slotPopulateRelateToMenu.
-        m_bRelateToMenuLoaded = false;
-        const TrackIdList trackIds = getTrackIds();
-        const muxic::TrackRelationStorage& relations = m_pLibrary->trackCollectionManager()
-                                                               ->internalCollection()
-                                                               ->trackRelations();
-        bool anyRelation = false;
-        for (const auto& trackId : trackIds) {
-            if (relations.countRelationsOfTrack(trackId) > 0) {
-                anyRelation = true;
-                break;
-            }
-        }
-        m_pShowRelatedTracksAct->setEnabled(trackIds.size() == 1);
-        m_pRemoveRelationsAct->setEnabled(anyRelation);
-
-        // The direction of a relation only has a meaning in a view that
-        // shows one relation per row.
-        auto* pRelatedModel = dynamic_cast<muxic::RelatedTracksTableModel*>(m_pTrackModel);
-        const bool showDirection =
-                pRelatedModel && pRelatedModel->showsOneRelationPerRow();
-        bool anyOneWay = false;
-        bool anyBothWays = false;
-        if (showDirection) {
-            for (const QModelIndex& trackIndex : std::as_const(m_trackIndexList)) {
-                muxic::TrackRelation relation;
-                if (!pRelatedModel->relationForIndex(trackIndex, &relation)) {
-                    continue;
-                }
-                if (relation.isBidirectional()) {
-                    anyBothWays = true;
-                } else {
-                    anyOneWay = true;
-                }
-            }
-        }
-        m_pRelateBothWaysAct->setVisible(showDirection && anyOneWay);
-        m_pRelateOneWayAct->setVisible(showDirection && anyBothWays);
+        m_pRelatedTracksMenu->updateSelection(m_pTrackModel, m_trackIndexList, getTrackIds());
     }
 
     if (featureIsEnabled(Feature::Remove)) {
@@ -1870,93 +1796,6 @@ void WTrackMenu::addSelectionToNewCrate() {
                 ->internalCollection()
                 ->addCrateTracks(crateId, trackIds);
     }
-}
-
-void WTrackMenu::slotPopulateRelateToMenu() {
-    if (m_bRelateToMenuLoaded) {
-        return;
-    }
-    m_pRelateToMenu->clear();
-
-    const int numDecks = static_cast<int>(m_pNumDecks.get());
-    for (int deck = 1; deck <= numDecks; ++deck) {
-        const TrackPointer pDeckTrack = PlayerInfo::instance().getTrackInfo(
-                PlayerManager::groupForDeck(deck - 1));
-        if (!pDeckTrack) {
-            continue;
-        }
-        const TrackId deckTrackId = pDeckTrack->getId();
-        if (!deckTrackId.isValid()) {
-            continue;
-        }
-        const QString label = tr("Deck %1: %2")
-                                      .arg(QString::number(deck), pDeckTrack->getInfo());
-        auto pAction = make_parented<QAction>(
-                mixxx::escapeTextPropertyWithoutShortcuts(label), m_pRelateToMenu);
-        m_pRelateToMenu->addAction(pAction);
-        connect(pAction,
-                &QAction::triggered,
-                this,
-                [this, deckTrackId] {
-                    relateSelectionToTrack(deckTrackId);
-                });
-    }
-
-    if (m_pRelateToMenu->isEmpty()) {
-        auto pAction = make_parented<QAction>(tr("No track on a deck"), m_pRelateToMenu);
-        pAction->setEnabled(false);
-        m_pRelateToMenu->addAction(pAction);
-    }
-    m_pRelateToMenu->addSeparator();
-    m_pRelateToMenu->addAction(m_pRemoveRelationsAct);
-
-    m_bRelateToMenuLoaded = true;
-}
-
-void WTrackMenu::relateSelectionToTrack(TrackId targetTrackId) {
-    const TrackIdList trackIds = getTrackIds();
-    if (trackIds.isEmpty()) {
-        qWarning() << "No tracks selected for a relation";
-        return;
-    }
-    muxic::TrackRelationStorage& relations = m_pLibrary->trackCollectionManager()
-                                                     ->internalCollection()
-                                                     ->trackRelations();
-    for (const auto& trackId : trackIds) {
-        if (trackId == targetTrackId) {
-            continue;
-        }
-        muxic::TrackRelation relation(trackId, targetTrackId);
-        relation.setType(muxic::kDefaultTrackRelationType);
-        relations.saveRelation(relation);
-    }
-}
-
-void WTrackMenu::setRelationsBidirectional(bool bidirectional) {
-    auto* pRelatedModel = dynamic_cast<muxic::RelatedTracksTableModel*>(m_pTrackModel);
-    if (!pRelatedModel) {
-        return;
-    }
-    pRelatedModel->setRelationsBidirectional(m_trackIndexList, bidirectional);
-}
-
-void WTrackMenu::slotRemoveRelations() {
-    const TrackIdList trackIds = getTrackIds();
-    if (trackIds.isEmpty()) {
-        return;
-    }
-    m_pLibrary->trackCollectionManager()
-            ->internalCollection()
-            ->trackRelations()
-            .removeAllRelationsOfTracks(trackIds);
-}
-
-void WTrackMenu::slotShowRelatedTracks() {
-    const TrackIdList trackIds = getTrackIds();
-    if (trackIds.size() != 1) {
-        return;
-    }
-    emit m_pLibrary->showRelatedTracks(trackIds.first());
 }
 
 void WTrackMenu::addToAnalysis(AnalyzerTrack::Options options) {

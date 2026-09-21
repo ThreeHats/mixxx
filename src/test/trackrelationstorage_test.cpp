@@ -109,7 +109,7 @@ TEST_F(TrackRelationStorageTest, selfRelationRefused) {
     EXPECT_EQ(0u, m_storage.countRelations());
 }
 
-TEST_F(TrackRelationStorageTest, bothWaysLookupFromEitherEnd) {
+TEST_F(TrackRelationStorageTest, aPairHasOneRowInEitherOrder) {
     const TrackId trackId1 = addTrack(QStringLiteral("-png.mp3"));
     const TrackId trackId2 = addTrack(QStringLiteral("-jpg.mp3"));
     ASSERT_TRUE(trackId1.isValid());
@@ -119,28 +119,21 @@ TEST_F(TrackRelationStorageTest, bothWaysLookupFromEitherEnd) {
     relation.setBidirectional(true);
     ASSERT_TRUE(m_storage.saveRelation(relation));
 
-    const QList<TrackRelation> fromSource = m_storage.readRelationsFrom(trackId1);
-    ASSERT_EQ(1, static_cast<int>(fromSource.size()));
-    EXPECT_EQ(trackId2, fromSource.first().otherTrackId(trackId1));
+    // The unique index of the unordered pair refuses the reverse row.
+    QSqlQuery insert(dbConnection());
+    insert.prepare(QStringLiteral("INSERT INTO " TRACK_RELATIONS_TABLE
+                                  " (source_track_id, target_track_id) VALUES (?, ?)"));
+    insert.addBindValue(trackId2.toVariant());
+    insert.addBindValue(trackId1.toVariant());
+    EXPECT_FALSE(insert.exec());
+    EXPECT_EQ(1u, m_storage.countRelations());
 
-    const QList<TrackRelation> fromTarget = m_storage.readRelationsFrom(trackId2);
-    ASSERT_EQ(1, static_cast<int>(fromTarget.size()));
-    EXPECT_EQ(trackId1, fromTarget.first().otherTrackId(trackId2));
-}
-
-TEST_F(TrackRelationStorageTest, oneWayLookupFromSourceOnly) {
-    const TrackId trackId1 = addTrack(QStringLiteral("-png.mp3"));
-    const TrackId trackId2 = addTrack(QStringLiteral("-jpg.mp3"));
-    ASSERT_TRUE(trackId1.isValid());
-    ASSERT_TRUE(trackId2.isValid());
-
-    ASSERT_TRUE(m_storage.saveRelation(TrackRelation(trackId1, trackId2)));
-
-    EXPECT_EQ(1, static_cast<int>(m_storage.readRelationsFrom(trackId1).size()));
-    EXPECT_EQ(0, static_cast<int>(m_storage.readRelationsFrom(trackId2).size()));
-    // Both ends count the relation.
-    EXPECT_EQ(1u, m_storage.countRelationsOfTrack(trackId1));
-    EXPECT_EQ(1u, m_storage.countRelationsOfTrack(trackId2));
+    // Either order finds the one row.
+    TrackRelation stored;
+    ASSERT_TRUE(m_storage.readRelation(trackId1, trackId2, &stored));
+    EXPECT_TRUE(stored.isBidirectional());
+    ASSERT_TRUE(m_storage.readRelation(trackId2, trackId1, &stored));
+    EXPECT_TRUE(stored.isBidirectional());
 }
 
 TEST_F(TrackRelationStorageTest, purgeHook) {
@@ -191,16 +184,53 @@ TEST_F(TrackRelationStorageTest, ratingIsClamped) {
     EXPECT_EQ(TrackRelation::kMaxRating, stored.getRating());
 }
 
-// The muxic hub runs these statements when its dedupe tool merges two
-// library rows. The page tools/muxic/docs/related-tracks.md shows the same
-// statements, thus this test keeps the page true.
+// The muxic hub runs these statements when it merges two library rows.
+// tools/muxic/docs/related-tracks.md shows the same statements.
 namespace {
 
 const char* kMergeStatements[] = {
+        // 1. Fold the fields of each row of the loser into the row of the
+        // winner that holds the same other track.
+        "UPDATE " TRACK_RELATIONS_TABLE
+        " AS w SET"
+        " bidirectional = max(w.bidirectional, coalesce(("
+        "   SELECT CASE WHEN l.bidirectional<>0"
+        "     OR (l.source_track_id=:loser)<>(w.source_track_id=:winner)"
+        "     THEN 1 ELSE 0 END FROM " TRACK_RELATIONS_TABLE
+        " l"
+        "   WHERE (l.source_track_id=:loser AND l.target_track_id<>:winner"
+        "          AND l.target_track_id IN (w.source_track_id, w.target_track_id))"
+        "      OR (l.target_track_id=:loser AND l.source_track_id<>:winner"
+        "          AND l.source_track_id IN (w.source_track_id, w.target_track_id))), 0)),"
+        " relation_type = CASE WHEN w.relation_type<>'' THEN w.relation_type ELSE coalesce(("
+        "   SELECT l.relation_type FROM " TRACK_RELATIONS_TABLE
+        " l"
+        "   WHERE (l.source_track_id=:loser AND l.target_track_id<>:winner"
+        "          AND l.target_track_id IN (w.source_track_id, w.target_track_id))"
+        "      OR (l.target_track_id=:loser AND l.source_track_id<>:winner"
+        "          AND l.source_track_id IN (w.source_track_id, w.target_track_id))), '') END,"
+        " rating = CASE WHEN w.rating<>0 THEN w.rating ELSE coalesce(("
+        "   SELECT l.rating FROM " TRACK_RELATIONS_TABLE
+        " l"
+        "   WHERE (l.source_track_id=:loser AND l.target_track_id<>:winner"
+        "          AND l.target_track_id IN (w.source_track_id, w.target_track_id))"
+        "      OR (l.target_track_id=:loser AND l.source_track_id<>:winner"
+        "          AND l.source_track_id IN (w.source_track_id, w.target_track_id))), 0) END,"
+        " notes = CASE WHEN w.notes<>'' THEN w.notes ELSE coalesce(("
+        "   SELECT l.notes FROM " TRACK_RELATIONS_TABLE
+        " l"
+        "   WHERE (l.source_track_id=:loser AND l.target_track_id<>:winner"
+        "          AND l.target_track_id IN (w.source_track_id, w.target_track_id))"
+        "      OR (l.target_track_id=:loser AND l.source_track_id<>:winner"
+        "          AND l.source_track_id IN (w.source_track_id, w.target_track_id))), '') END"
+        " WHERE w.source_track_id=:winner OR w.target_track_id=:winner",
+        // 2. Move the rows that the winner does not hold. The unique index
+        // of the unordered pair refuses the rest.
         "UPDATE OR IGNORE " TRACK_RELATIONS_TABLE
         " SET source_track_id = :winner WHERE source_track_id = :loser",
         "UPDATE OR IGNORE " TRACK_RELATIONS_TABLE
         " SET target_track_id = :winner WHERE target_track_id = :loser",
+        // 3. Drop what is left on the loser and any self relation.
         "DELETE FROM " TRACK_RELATIONS_TABLE
         " WHERE source_track_id = :loser OR target_track_id = :loser",
         "DELETE FROM " TRACK_RELATIONS_TABLE
@@ -292,4 +322,85 @@ TEST_F(TrackRelationMergeTest, aRelationOfTheTwoMergedTracksGoes) {
 
     // The merge would make a relation of the winner with itself.
     EXPECT_EQ(0u, m_storage.countRelations());
+}
+
+TEST_F(TrackRelationMergeTest, theWinnerTakesTheFieldsThatItLacks) {
+    const TrackId loser = addTrack(QStringLiteral("-png.mp3"));
+    const TrackId winner = addTrack(QStringLiteral("-jpg.mp3"));
+    const TrackId other = addTrack(QStringLiteral("-vbr.mp3"));
+    ASSERT_TRUE(other.isValid());
+
+    // The winner has a type only, the loser has a rating and a note.
+    TrackRelation winnerRelation(winner, other);
+    winnerRelation.setType(QStringLiteral("mashup"));
+    ASSERT_TRUE(m_storage.saveRelation(winnerRelation));
+    TrackRelation loserRelation(loser, other);
+    loserRelation.setType(QStringLiteral("double_drop"));
+    loserRelation.setRating(4);
+    loserRelation.setNotes(QStringLiteral("cut on the drop"));
+    ASSERT_TRUE(m_storage.saveRelation(loserRelation));
+
+    ASSERT_TRUE(mergeTracks(loser, winner));
+
+    EXPECT_EQ(1u, m_storage.countRelations());
+    TrackRelation stored;
+    ASSERT_TRUE(m_storage.readRelation(winner, other, &stored));
+    EXPECT_EQ(QStringLiteral("mashup"), stored.getType());
+    EXPECT_EQ(4, stored.getRating());
+    EXPECT_EQ(QStringLiteral("cut on the drop"), stored.getNotes());
+}
+
+TEST_F(TrackRelationMergeTest, aBothWaysLoserMakesTheWinnerBothWays) {
+    const TrackId loser = addTrack(QStringLiteral("-png.mp3"));
+    const TrackId winner = addTrack(QStringLiteral("-jpg.mp3"));
+    const TrackId other = addTrack(QStringLiteral("-vbr.mp3"));
+    ASSERT_TRUE(other.isValid());
+
+    ASSERT_TRUE(m_storage.saveRelation(TrackRelation(winner, other)));
+    TrackRelation loserRelation(loser, other);
+    loserRelation.setBidirectional(true);
+    ASSERT_TRUE(m_storage.saveRelation(loserRelation));
+
+    ASSERT_TRUE(mergeTracks(loser, winner));
+
+    EXPECT_EQ(1u, m_storage.countRelations());
+    TrackRelation stored;
+    ASSERT_TRUE(m_storage.readRelation(winner, other, &stored));
+    EXPECT_TRUE(stored.isBidirectional());
+}
+
+TEST_F(TrackRelationMergeTest, oppositeDirectionsGiveBothWays) {
+    const TrackId loser = addTrack(QStringLiteral("-png.mp3"));
+    const TrackId winner = addTrack(QStringLiteral("-jpg.mp3"));
+    const TrackId other = addTrack(QStringLiteral("-vbr.mp3"));
+    ASSERT_TRUE(other.isValid());
+
+    // The winner leads to the other track, the other track leads to the
+    // loser. After the merge the two tracks point at each other.
+    ASSERT_TRUE(m_storage.saveRelation(TrackRelation(winner, other)));
+    ASSERT_TRUE(m_storage.saveRelation(TrackRelation(other, loser)));
+    ASSERT_EQ(2u, m_storage.countRelations());
+
+    ASSERT_TRUE(mergeTracks(loser, winner));
+
+    EXPECT_EQ(1u, m_storage.countRelations());
+    TrackRelation stored;
+    ASSERT_TRUE(m_storage.readRelation(winner, other, &stored));
+    EXPECT_TRUE(stored.isBidirectional());
+}
+
+TEST_F(TrackRelationMergeTest, theReverseOrderOfAPairIsOneRow) {
+    const TrackId loser = addTrack(QStringLiteral("-png.mp3"));
+    const TrackId winner = addTrack(QStringLiteral("-jpg.mp3"));
+    const TrackId other = addTrack(QStringLiteral("-vbr.mp3"));
+    ASSERT_TRUE(other.isValid());
+
+    // The two rows hold the same pair after the merge, in reverse order.
+    ASSERT_TRUE(m_storage.saveRelation(TrackRelation(loser, other)));
+    ASSERT_TRUE(m_storage.saveRelation(TrackRelation(other, winner)));
+    ASSERT_EQ(2u, m_storage.countRelations());
+
+    ASSERT_TRUE(mergeTracks(loser, winner));
+
+    EXPECT_EQ(1u, m_storage.countRelations());
 }

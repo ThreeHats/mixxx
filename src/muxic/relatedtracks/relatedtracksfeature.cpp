@@ -6,12 +6,15 @@
 #include "library/trackcollection.h"
 #include "library/trackcollectionmanager.h"
 #include "library/treeitem.h"
+#include "library/treeitemmodel.h"
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "moc_relatedtracksfeature.cpp"
 #include "muxic/relatedtracks/trackrelation.h"
 #include "muxic/relatedtracks/trackrelationstorage.h"
 #include "track/track.h"
+
+namespace muxic {
 
 namespace {
 
@@ -20,7 +23,9 @@ const QString kViewName = QStringLiteral("RELATEDTRACKSHOME");
 const ConfigKey kRelateActiveDecksConfigKey(
         QStringLiteral("[Library]"), QStringLiteral("relate_active_decks"));
 
-constexpr int kNodeKindFactor = 100;
+// A selection moves while the user holds a key. The read of the table
+// waits for the selection to settle.
+constexpr int kRefreshDelayMillis = 150;
 
 bool deckHasTrack(int deckNumber, TrackPointer* pTrack) {
     const TrackPointer pDeckTrack = PlayerInfo::instance().getTrackInfo(
@@ -40,16 +45,27 @@ bool deckIsPlaying(int deckNumber) {
     return play.valid() && play.toBool();
 }
 
-} // anonymous namespace
+QVariant nodeToVariant(const RelatedNode& node) {
+    return QVariant::fromValue(node);
+}
 
-namespace muxic {
+RelatedNode nodeFromVariant(const QVariant& data) {
+    if (data.canConvert<RelatedNode>()) {
+        return data.value<RelatedNode>();
+    }
+    return RelatedNode{};
+}
+
+} // anonymous namespace
 
 RelatedTracksFeature::RelatedTracksFeature(Library* pLibrary, UserSettingsPointer pConfig)
         : BaseTrackSetFeature(pLibrary, pConfig, kViewName, QStringLiteral("related")),
           m_tableModel(this, pLibrary->trackCollectionManager()),
+          m_modelIsVisible(false),
           m_numDecks(0) {
     m_pRelateActiveDecksControl =
             std::make_unique<ControlPushButton>(kRelateActiveDecksConfigKey);
+    m_pRelateActiveDecksControl->setButtonMode(mixxx::control::ButtonMode::Trigger);
     connect(m_pRelateActiveDecksControl.get(),
             &ControlObject::valueChanged,
             this,
@@ -61,6 +77,13 @@ RelatedTracksFeature::RelatedTracksFeature(Library* pLibrary, UserSettingsPointe
             this, &RelatedTracksFeature::slotNumDecksChanged);
     m_numDecks = static_cast<int>(m_pNumDecksControl->get());
 
+    m_refreshTimer.setSingleShot(true);
+    m_refreshTimer.setInterval(kRefreshDelayMillis);
+    connect(&m_refreshTimer,
+            &QTimer::timeout,
+            this,
+            &RelatedTracksFeature::slotRefreshTimeout);
+
     rebuildChildModel();
 
     connect(pLibrary,
@@ -71,6 +94,17 @@ RelatedTracksFeature::RelatedTracksFeature(Library* pLibrary, UserSettingsPointe
             &Library::showRelatedTracks,
             this,
             &RelatedTracksFeature::slotShowRelatedTracks);
+    // The library names the model that the view shows. This feature reads
+    // its table again only for its own model.
+    connect(pLibrary,
+            &Library::showTrackModel,
+            this,
+            [this](QAbstractItemModel* pModel, bool) {
+                m_modelIsVisible = (pModel == &m_tableModel);
+            });
+    connect(pLibrary, &Library::switchToView, this, [this](const QString&) {
+        m_modelIsVisible = false;
+    });
     connect(&PlayerInfo::instance(),
             &PlayerInfo::trackChanged,
             this,
@@ -87,26 +121,12 @@ QVariant RelatedTracksFeature::title() {
     return tr("Related Tracks");
 }
 
-TrackRelationStorage& RelatedTracksFeature::storage() const {
+const TrackRelationStorage& RelatedTracksFeature::storage() const {
     return m_pLibrary->trackCollectionManager()->internalCollection()->trackRelations();
 }
 
-// static
-QVariant RelatedTracksFeature::nodeToVariant(const Node& node) {
-    return QVariant(static_cast<int>(node.kind) * kNodeKindFactor + node.deckNumber);
-}
-
-// static
-RelatedTracksFeature::Node RelatedTracksFeature::nodeFromVariant(const QVariant& data) {
-    Node node;
-    bool ok = false;
-    const int value = data.toInt(&ok);
-    if (!ok) {
-        return node;
-    }
-    node.kind = static_cast<NodeKind>(value / kNodeKindFactor);
-    node.deckNumber = value % kNodeKindFactor;
-    return node;
+TrackRelationStorage& RelatedTracksFeature::storage() {
+    return m_pLibrary->trackCollectionManager()->internalCollection()->trackRelations();
 }
 
 QString RelatedTracksFeature::deckLabel(int deckNumber) const {
@@ -118,20 +138,24 @@ QString RelatedTracksFeature::deckLabel(int deckNumber) const {
 }
 
 void RelatedTracksFeature::updateDeckLabel(int deckNumber) {
-    if (deckNumber < 1 || deckNumber > m_numDecks) {
+    if (deckNumber < 1) {
         return;
     }
     const QString label = deckLabel(deckNumber);
-    // Row 0 of a group is the node of the selected track, thus the row of a
-    // deck is its number.
-    for (int group = 0; group < 2; ++group) {
+    const int groupCount = m_pSidebarModel->rowCount();
+    for (int group = 0; group < groupCount; ++group) {
         const QModelIndex groupIndex = m_pSidebarModel->index(group, 0);
-        if (!groupIndex.isValid()) {
-            continue;
-        }
-        const QModelIndex deckIndex = m_pSidebarModel->index(deckNumber, 0, groupIndex);
-        if (deckIndex.isValid()) {
-            m_pSidebarModel->setData(deckIndex, label, Qt::DisplayRole);
+        const int childCount = m_pSidebarModel->rowCount(groupIndex);
+        for (int child = 0; child < childCount; ++child) {
+            const QModelIndex childIndex = m_pSidebarModel->index(child, 0, groupIndex);
+            const RelatedNode node = nodeFromVariant(
+                    m_pSidebarModel->data(childIndex, TreeItemModel::kDataRole));
+            const bool isThisDeck = node.deckNumber == deckNumber &&
+                    (node.kind == RelatedNodeKind::RelatedToDeck ||
+                            node.kind == RelatedNodeKind::SuggestedForDeck);
+            if (isThisDeck) {
+                m_pSidebarModel->setData(childIndex, label, Qt::DisplayRole);
+            }
         }
     }
 }
@@ -139,75 +163,87 @@ void RelatedTracksFeature::updateDeckLabel(int deckNumber) {
 void RelatedTracksFeature::rebuildChildModel() {
     std::unique_ptr<TreeItem> pRootItem = TreeItem::newRoot(this);
 
-    TreeItem* pRelatedItem = pRootItem->appendChild(tr("Related"),
-            nodeToVariant(Node{NodeKind::Root, 0}));
+    TreeItem* pRelatedItem = pRootItem->appendChild(
+            tr("Related"), nodeToVariant(RelatedNode{RelatedNodeKind::Root, 0}));
     pRelatedItem->appendChild(tr("Selected track"),
-            nodeToVariant(Node{NodeKind::RelatedToSelected, 0}));
+            nodeToVariant(RelatedNode{RelatedNodeKind::RelatedToSelected, 0}));
     for (int deck = 1; deck <= m_numDecks; ++deck) {
         pRelatedItem->appendChild(deckLabel(deck),
-                nodeToVariant(Node{NodeKind::RelatedToDeck, deck}));
+                nodeToVariant(RelatedNode{RelatedNodeKind::RelatedToDeck, deck}));
     }
 
-    TreeItem* pSuggestedItem = pRootItem->appendChild(tr("Suggestions"),
-            nodeToVariant(Node{NodeKind::Root, 0}));
+    TreeItem* pSuggestedItem = pRootItem->appendChild(
+            tr("Suggestions"), nodeToVariant(RelatedNode{RelatedNodeKind::Root, 0}));
     pSuggestedItem->appendChild(tr("Selected track"),
-            nodeToVariant(Node{NodeKind::SuggestedForSelected, 0}));
+            nodeToVariant(RelatedNode{RelatedNodeKind::SuggestedForSelected, 0}));
     for (int deck = 1; deck <= m_numDecks; ++deck) {
         pSuggestedItem->appendChild(deckLabel(deck),
-                nodeToVariant(Node{NodeKind::SuggestedForDeck, deck}));
+                nodeToVariant(RelatedNode{RelatedNodeKind::SuggestedForDeck, deck}));
     }
 
     m_pSidebarModel->setRootItem(std::move(pRootItem));
 }
 
-TrackId RelatedTracksFeature::referenceTrackIdOf(const Node& node) const {
+TrackId RelatedTracksFeature::referenceTrackIdOf(const RelatedNode& node) const {
     switch (node.kind) {
-    case NodeKind::RelatedToSelected:
-    case NodeKind::SuggestedForSelected:
+    case RelatedNodeKind::RelatedToSelected:
+    case RelatedNodeKind::SuggestedForSelected:
         return m_selectedTrackId;
-    case NodeKind::RelatedToDeck:
-    case NodeKind::SuggestedForDeck: {
+    case RelatedNodeKind::RelatedToDeck:
+    case RelatedNodeKind::SuggestedForDeck: {
         TrackPointer pTrack;
         if (deckHasTrack(node.deckNumber, &pTrack)) {
             return pTrack->getId();
         }
         return TrackId();
     }
-    case NodeKind::Root:
+    case RelatedNodeKind::Root:
         break;
     }
     return TrackId();
 }
 
-void RelatedTracksFeature::showNode(const Node& node) {
-    emit saveModelState();
+void RelatedTracksFeature::selectNode(const RelatedNode& node) {
+    m_refreshTimer.stop();
     switch (node.kind) {
-    case NodeKind::Root:
+    case RelatedNodeKind::Root:
         m_tableModel.selectAllRelated();
         break;
-    case NodeKind::RelatedToSelected:
-    case NodeKind::RelatedToDeck:
+    case RelatedNodeKind::RelatedToSelected:
+    case RelatedNodeKind::RelatedToDeck:
         m_tableModel.selectRelatedTo(referenceTrackIdOf(node));
         break;
-    case NodeKind::SuggestedForSelected:
-    case NodeKind::SuggestedForDeck:
+    case RelatedNodeKind::SuggestedForSelected:
+    case RelatedNodeKind::SuggestedForDeck:
         m_tableModel.selectSuggestedFor(referenceTrackIdOf(node));
         break;
     }
     m_shownNode = node;
+}
+
+void RelatedTracksFeature::showNode(const RelatedNode& node) {
+    emit saveModelState();
+    selectNode(node);
     emit showTrackModel(&m_tableModel);
     emit enableCoverArtDisplay(true);
 }
 
-void RelatedTracksFeature::refreshForTrackOfNode(const Node& node) {
-    if (m_shownNode.kind != node.kind || m_shownNode.deckNumber != node.deckNumber) {
+void RelatedTracksFeature::scheduleRefresh(const RelatedNode& node) {
+    if (!m_modelIsVisible || m_shownNode != node) {
         return;
     }
-    showNode(node);
+    m_refreshTimer.start();
+}
+
+void RelatedTracksFeature::slotRefreshTimeout() {
+    if (!m_modelIsVisible) {
+        return;
+    }
+    selectNode(m_shownNode);
 }
 
 void RelatedTracksFeature::activate() {
-    showNode(Node{NodeKind::Root, 0});
+    showNode(RelatedNode{RelatedNodeKind::Root, 0});
 }
 
 void RelatedTracksFeature::activateChild(const QModelIndex& index) {
@@ -235,7 +271,7 @@ void RelatedTracksFeature::slotShowRelatedTracks(TrackId trackId) {
     if (index.isValid()) {
         selectAndActivate(index);
     } else {
-        showNode(Node{NodeKind::RelatedToSelected, 0});
+        showNode(RelatedNode{RelatedNodeKind::RelatedToSelected, 0});
     }
 }
 
@@ -247,8 +283,8 @@ void RelatedTracksFeature::slotTrackSelected(TrackPointer pTrack) {
         return;
     }
     m_selectedTrackId = trackId;
-    refreshForTrackOfNode(Node{NodeKind::RelatedToSelected, 0});
-    refreshForTrackOfNode(Node{NodeKind::SuggestedForSelected, 0});
+    scheduleRefresh(RelatedNode{RelatedNodeKind::RelatedToSelected, 0});
+    scheduleRefresh(RelatedNode{RelatedNodeKind::SuggestedForSelected, 0});
 }
 
 void RelatedTracksFeature::slotDeckTrackChanged(const QString& group,
@@ -261,16 +297,18 @@ void RelatedTracksFeature::slotDeckTrackChanged(const QString& group,
         return;
     }
     updateDeckLabel(deckNumber);
-    refreshForTrackOfNode(Node{NodeKind::RelatedToDeck, deckNumber});
-    refreshForTrackOfNode(Node{NodeKind::SuggestedForDeck, deckNumber});
+    scheduleRefresh(RelatedNode{RelatedNodeKind::RelatedToDeck, deckNumber});
+    scheduleRefresh(RelatedNode{RelatedNodeKind::SuggestedForDeck, deckNumber});
 }
 
 void RelatedTracksFeature::slotRelationsChanged() {
-    if (m_shownNode.kind == NodeKind::SuggestedForSelected ||
-            m_shownNode.kind == NodeKind::SuggestedForDeck) {
+    const bool showsSuggestions =
+            m_shownNode.kind == RelatedNodeKind::SuggestedForSelected ||
+            m_shownNode.kind == RelatedNodeKind::SuggestedForDeck;
+    if (!m_modelIsVisible || showsSuggestions) {
         return;
     }
-    showNode(m_shownNode);
+    selectNode(m_shownNode);
 }
 
 void RelatedTracksFeature::slotNumDecksChanged(double numDecks) {
@@ -287,28 +325,27 @@ void RelatedTracksFeature::slotRelateActiveDecks(double value) {
         return;
     }
 
-    QList<int> playingDecks;
+    QList<int> decks;
     for (int deck = 1; deck <= m_numDecks; ++deck) {
         if (deckHasTrack(deck, nullptr) && deckIsPlaying(deck)) {
-            playingDecks.append(deck);
+            decks.append(deck);
         }
     }
-    if (playingDecks.size() != 2) {
-        // Without exactly two playing decks the control falls back to the
-        // first two decks.
-        playingDecks.clear();
+    if (decks.size() != 2) {
+        // The control takes the first two decks when the count is not two.
+        decks.clear();
         if (deckHasTrack(1, nullptr) && deckHasTrack(2, nullptr)) {
-            playingDecks << 1 << 2;
+            decks << 1 << 2;
         }
     }
-    if (playingDecks.size() != 2) {
+    if (decks.size() != 2) {
         return;
     }
 
     TrackPointer pSourceTrack;
     TrackPointer pTargetTrack;
-    if (!deckHasTrack(playingDecks.at(0), &pSourceTrack) ||
-            !deckHasTrack(playingDecks.at(1), &pTargetTrack)) {
+    if (!deckHasTrack(decks.at(0), &pSourceTrack) ||
+            !deckHasTrack(decks.at(1), &pTargetTrack)) {
         return;
     }
 
