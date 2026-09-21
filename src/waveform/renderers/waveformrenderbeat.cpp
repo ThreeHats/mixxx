@@ -91,7 +91,8 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
     // The grid index of the first drawn beat. Stepping it with the iterator
     // costs less than a lookup for each beat of a grid with tempo markers.
     const std::optional<mixxx::BarPhase>& barPhase = trackBeats->barPhase();
-    int beatIndex = barPhase ? trackBeats->beatIndex(it) : 0;
+    const bool drawBars = barPhase && it != trackBeats->cbegin();
+    int beatIndex = drawBars ? trackBeats->beatIndex(it) : 0;
 
     int beatCount = 0;
     int downbeatCount = 0;
@@ -103,7 +104,7 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
 
         xBeatPoint = qRound(xBeatPoint * devicePixelRatio) / devicePixelRatio;
 
-        const bool isDownbeat = barPhase && barPhase->isDownbeat(beatIndex);
+        const bool isDownbeat = drawBars && barPhase->isDownbeat(beatIndex);
         QVector<QLineF>& lines = isDownbeat ? m_downbeats : m_beats;
         int& count = isDownbeat ? downbeatCount : beatCount;
 

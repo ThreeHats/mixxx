@@ -143,7 +143,8 @@ bool WaveformRenderBeat::preprocessInner() {
     // The grid index of the first drawn beat. Stepping it with the iterator
     // costs less than a lookup for each beat of a grid with tempo markers.
     auto it = trackBeats->iteratorFrom(startPosition);
-    int beatIndex = barPhase ? trackBeats->beatIndex(it) : 0;
+    const bool drawBars = barPhase && it != trackBeats->cbegin();
+    int beatIndex = drawBars ? trackBeats->beatIndex(it) : 0;
 
     for (; it != trackBeats->cend() && *it <= endPosition; ++it, ++beatIndex) {
         double beatPosition = it->toEngineSamplePos();
@@ -156,7 +157,7 @@ bool WaveformRenderBeat::preprocessInner() {
         const float x1 = static_cast<float>(xBeatPoint);
         const float x2 = x1 + 1.f;
         const QVector4D& color =
-                (barPhase && barPhase->isDownbeat(beatIndex)) ? barColor : beatColor;
+                (drawBars && barPhase->isDownbeat(beatIndex)) ? barColor : beatColor;
 
         if (m_isSlipRenderer && splitStemTracks) {
             for (int stemIdx = 0; stemIdx < mixxx::kMaxSupportedStems; ++stemIdx) {
