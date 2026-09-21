@@ -104,6 +104,20 @@ QString muxerPathOrEmpty() {
     return QStandardPaths::findExecutable(QStringLiteral("MP4Box"));
 }
 
+QString encoderPathOrEmpty() {
+    return QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+}
+
+/// Fill one entry of a waveform with the peak of the mix and of each stem.
+void setDatum(WaveformData* pDatum,
+        unsigned char all,
+        const std::array<unsigned char, mixxx::kMaxSupportedStems>& stems) {
+    pDatum->filtered.all = all;
+    for (int stemIdx = 0; stemIdx < mixxx::kMaxSupportedStems; ++stemIdx) {
+        pDatum->stems[stemIdx] = stems[stemIdx];
+    }
+}
+
 class StemWaveformTest : public MixxxTest {
   protected:
     /// Run the waveform analyzer over a buffer and give the peak of each band.
@@ -180,7 +194,7 @@ class StemWaveformTest : public MixxxTest {
 
     /// Run the conversion job over a tone and give the path of the stem file.
     /// Each stem holds the same tone at its share of the level of the source.
-    QString makeStemFile(const QString& workDirPath) {
+    QString makeStemFile(const QString& workDirPath, bool useDefaultEncoder) {
         const QString sourceFilePath =
                 QDir(workDirPath).filePath(QStringLiteral("tone.wav"));
         EXPECT_TRUE(writeToneWav(sourceFilePath, kMixAmplitude, kFrameCount));
@@ -212,7 +226,9 @@ class StemWaveformTest : public MixxxTest {
                                "\"$INPUT\" \"%2\"")
                         .arg(separatorScript, stemDir.absolutePath()));
         settings.setModel(QStringLiteral("testmodel"));
-        settings.setEncoderCommand(QString());
+        settings.setEncoderCommand(useDefaultEncoder
+                        ? mixxx::StemConversionSettings::defaultEncoderCommand()
+                        : QString());
         settings.setMuxerPath(muxerPathOrEmpty());
         settings.setOutputMode(mixxx::StemOutputMode::CustomDirectory);
         settings.setOutputDirectory(workDirPath);
@@ -227,9 +243,11 @@ class StemWaveformTest : public MixxxTest {
         const QString stemFilePath =
                 QDir(workDirPath).filePath(QStringLiteral("tone.stem.mp4"));
         EXPECT_TRUE(QFile::exists(stemFilePath));
+        if (!SoundSourceProxy::isFileTypeSupported(QStringLiteral("stem.mp4"))) {
+            SoundSourceProxy::registerProviders();
+        }
         EXPECT_TRUE(SoundSourceProxy::isFileTypeSupported(
-                            QStringLiteral("stem.mp4")) ||
-                SoundSourceProxy::registerProviders());
+                QStringLiteral("stem.mp4")));
         return stemFilePath;
     }
 };
@@ -278,55 +296,87 @@ TEST_F(StemWaveformTest, StemOverlayScaleLiftsTheLoudestStemToTheMix) {
     EXPECT_FLOAT_EQ(1.0f, mixxx::stemOverlayScale(255, 255));
     // A mix that cancels its own parts must not grow.
     EXPECT_FLOAT_EQ(0.5f, mixxx::stemOverlayScale(100, 200));
-    // Silence must not divide by zero.
+    // Silence must not divide by zero and must not hide a strip.
     EXPECT_FLOAT_EQ(1.0f, mixxx::stemOverlayScale(0, 0));
     EXPECT_FLOAT_EQ(1.0f, mixxx::stemOverlayScale(200, 0));
+    EXPECT_FLOAT_EQ(1.0f, mixxx::stemOverlayScale(0, 200));
 }
 
-// WaveformRendererStem draws heightFactor * peak * scale and
-// WaveformRendererRGB draws heightFactor * all. Both must give one height.
+// The stem renderer and every other signal renderer call these two
+// functions. The height of a stem track must follow the height of a normal
+// track at each value of the gain, thus neither may apply the gain twice.
 TEST_F(StemWaveformTest, StemStripReachesTheHeightOfTheNormalWaveform) {
-    // One strip of the measured values: the mix reaches 250 and the four
-    // stems reach 100, 75, 50 and 25.
-    constexpr int kStemCount = 4;
-    std::array<WaveformData, 2> strip{};
-    for (WaveformData& datum : strip) {
-        datum.filtered.all = 250;
-        datum.stems[0] = 100;
-        datum.stems[1] = 75;
-        datum.stems[2] = 50;
-        datum.stems[3] = 25;
+    constexpr float kHalfBreadth = 40.0f; // A waveform of 80 pixels
+    // The measured values: the mix reaches 250, the four stems 100, 75, 50
+    // and 25.
+    std::array<WaveformData, 2> data{};
+    setDatum(&data[0], 250, {{100, 75, 50, 25}});
+    setDatum(&data[1], 250, {{100, 75, 50, 25}});
+    mixxx::StemTrackScale trackScale;
+    const float scale = trackScale.scale(data.data(), 2, 2, 4);
+    EXPECT_FLOAT_EQ(2.5f, scale);
+
+    for (const float allGain : {0.5f, 1.0f, 2.0f}) {
+        const float normalHeight = mixxx::mixStripHalfHeight(
+                250, allGain, kHalfBreadth);
+        const float stemHeight = mixxx::stemStripHalfHeight(
+                100, scale, 1.0f, allGain, kHalfBreadth);
+        EXPECT_FLOAT_EQ(normalHeight, stemHeight)
+                << "the gain " << allGain << " does not act the same way";
+
+        // The stems keep their size relative to each other.
+        const float bassHeight = mixxx::stemStripHalfHeight(
+                75, scale, 1.0f, allGain, kHalfBreadth);
+        EXPECT_FLOAT_EQ(0.75f, bassHeight / stemHeight);
+        // The fader of a stem lowers only that stem.
+        EXPECT_FLOAT_EQ(stemHeight / 2.0f,
+                mixxx::stemStripHalfHeight(100, scale, 0.5f, allGain, kHalfBreadth));
     }
-
-    const mixxx::StemStripPeaks peaks = mixxx::stemStripPeaks(
-            strip.data(), 0, 2, kStemCount);
-    EXPECT_EQ(250, peaks.all);
-    EXPECT_EQ(100, peaks.loudestStem(kStemCount));
-
-    // The height factor of every signal renderer, for a widget of 80 pixels.
-    constexpr float kHeightFactor = 40.0f / 255.0f;
-    const float normalHeight = kHeightFactor * static_cast<float>(peaks.all);
-    const float scale = mixxx::stemOverlayScale(
-            peaks.all, peaks.loudestStem(kStemCount));
-    const float stemHeight = kHeightFactor *
-            static_cast<float>(peaks.loudestStem(kStemCount)) * scale;
-    EXPECT_FLOAT_EQ(normalHeight, stemHeight);
-
-    // The stems keep their size relative to each other.
-    const float bassHeight = kHeightFactor *
-            static_cast<float>(peaks.stems[1]) * scale;
-    EXPECT_FLOAT_EQ(0.75f, bassHeight / stemHeight);
 }
 
-// The whole conversion pipeline, with the real ffmpeg and the real MP4Box.
-// The encode and the mux must keep the level of every stream.
+// The factor holds for the whole track, thus a stem keeps its height when
+// another stem starts. The reader takes the part that the analyzer filled.
+TEST_F(StemWaveformTest, StemTrackScaleReadsTheWholeTrackOnlyOneTime) {
+    std::array<WaveformData, 4> data{};
+    // A part with the bass alone, then a part with the drums over it.
+    setDatum(&data[0], 60, {{0, 60, 0, 0}});
+    setDatum(&data[1], 60, {{0, 60, 0, 0}});
+    setDatum(&data[2], 200, {{140, 60, 0, 0}});
+    setDatum(&data[3], 200, {{140, 60, 0, 0}});
+
+    mixxx::StemTrackScale scale;
+    // The analyzer filled the first half. The bass alone is the mix there.
+    EXPECT_FLOAT_EQ(1.0f, scale.scale(data.data(), 4, 2, 4));
+    // The second half arrives and the factor follows the whole track.
+    const float full = scale.scale(data.data(), 4, 4, 4);
+    EXPECT_FLOAT_EQ(200.0f / 140.0f, full);
+    // A second read of the same waveform gives the same factor.
+    EXPECT_FLOAT_EQ(full, scale.scale(data.data(), 4, 4, 4));
+
+    // Another waveform starts the count again.
+    std::array<WaveformData, 2> other{};
+    setDatum(&other[0], 100, {{50, 0, 0, 0}});
+    setDatum(&other[1], 100, {{50, 0, 0, 0}});
+    EXPECT_FLOAT_EQ(2.0f, scale.scale(other.data(), 2, 2, 4));
+}
+
+// In the Stacked mode a lane shows the level of its own stem, thus the
+// renderer passes no factor.
+TEST_F(StemWaveformTest, StackedModeDrawsTheLevelOfTheStem) {
+    constexpr float kLaneHalfBreadth = 10.0f;
+    EXPECT_FLOAT_EQ(mixxx::mixStripHalfHeight(100, 1.0f, kLaneHalfBreadth),
+            mixxx::stemStripHalfHeight(100, 1.0f, 1.0f, 1.0f, kLaneHalfBreadth));
+}
+
+// The whole conversion pipeline, with the default AAC encode command of
+// ffmpeg and the real MP4Box. Both must keep the level of every stream.
 TEST_F(StemWaveformTest, ConvertedStemFileKeepsTheLevelOfTheSource) {
-    if (muxerPathOrEmpty().isEmpty()) {
-        GTEST_SKIP() << "MP4Box is not installed";
+    if (muxerPathOrEmpty().isEmpty() || encoderPathOrEmpty().isEmpty()) {
+        GTEST_SKIP() << "MP4Box or ffmpeg is not installed";
     }
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
-    const QString stemFilePath = makeStemFile(dir.path());
+    const QString stemFilePath = makeStemFile(dir.path(), true);
     const QString sourceFilePath = dir.filePath(QStringLiteral("tone.wav"));
 
     const WaveformPeaks sourcePeaks = analyzeFile(
@@ -350,7 +400,7 @@ TEST_F(StemWaveformTest, ReplayGainOfAStemFileIsTheReplayGainOfTheSource) {
     }
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
-    const QString stemFilePath = makeStemFile(dir.path());
+    const QString stemFilePath = makeStemFile(dir.path(), false);
     const QString sourceFilePath = dir.filePath(QStringLiteral("tone.wav"));
 
     const double sourceRatio = replayGainOfFile(
