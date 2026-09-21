@@ -129,6 +129,21 @@ TEST_F(WLibraryTableViewTest, TheWheelAloneMovesTheTableDown) {
     EXPECT_EQ(0, horizontalValue());
 }
 
+TEST_F(WLibraryTableViewTest, ATableWithNoSideRangeLeavesTheEventFree) {
+    // A widget above the table can then take the wheel.
+    m_pView->horizontalHeader()->setMinimumSectionSize(5);
+    for (int column = 0; column < kColumns; ++column) {
+        m_pView->setColumnWidth(column, 5);
+    }
+    QApplication::processEvents();
+    ASSERT_EQ(0, m_pView->horizontalScrollBar()->maximum());
+
+    EXPECT_FALSE(sendWheel(Qt::ShiftModifier));
+
+    EXPECT_EQ(0, horizontalValue());
+    EXPECT_EQ(0, verticalValue());
+}
+
 TEST_F(WLibraryTableViewTest, AWheelToTheSideKeepsItsDirection) {
     // A wheel that already goes to the side needs no help from Shift.
     const QPointF pos(kViewWidth / 2.0, kViewHeight / 2.0);

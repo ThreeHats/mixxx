@@ -323,13 +323,15 @@ void WLibraryTableView::wheelEvent(QWheelEvent* pEvent) {
             QPoint(pEvent->pixelDelta().y(), 0),
             QPoint(angleDelta.y(), 0),
             pEvent->buttons(),
-            pEvent->modifiers() & ~Qt::ShiftModifier,
+            pEvent->modifiers() & ~(Qt::ShiftModifier | Qt::ControlModifier),
             pEvent->phase(),
             pEvent->inverted(),
             pEvent->source(),
             pEvent->pointingDevice());
     QApplication::sendEvent(horizontalScrollBar(), &sideEvent);
-    pEvent->accept();
+    // A table with no space to the side leaves the event free for a widget
+    // above it.
+    pEvent->setAccepted(sideEvent.isAccepted());
 }
 
 QModelIndex WLibraryTableView::moveCursor(CursorAction cursorAction,
