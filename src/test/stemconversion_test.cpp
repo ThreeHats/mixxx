@@ -1,10 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QThread>
 #include <cmath>
 
 #include "sources/metadatasourcetaglib.h"
@@ -149,6 +152,19 @@ class StemConversionTest : public MixxxTest {
                 .arg(fakeSeparatorCommand(QStringLiteral("from")), stemDirPath);
     }
 
+    /// Run the event loop until the job reaches the state.
+    static bool waitForState(const mixxx::StemConversionJob& job,
+            mixxx::StemConversionJob::State state,
+            int timeoutMillis = 30000) {
+        QElapsedTimer timer;
+        timer.start();
+        while (job.state() != state && timer.elapsed() < timeoutMillis) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            QThread::msleep(5);
+        }
+        return job.state() == state;
+    }
+
     mixxx::StemConversionSettings makeSettings(const QString& mode,
             const QString& outputDirPath) const {
         mixxx::StemConversionSettings settings;
@@ -257,7 +273,7 @@ TEST_F(StemConversionTest, FindStemFilesOrdersByRole) {
 
     QString errorMessage;
     const QStringList files = mixxx::StemConversionJob::findStemFiles(
-            dir.path(), &errorMessage);
+            dir.path(), QString(), &errorMessage);
     ASSERT_EQ(4, files.size()) << errorMessage.toStdString();
     EXPECT_TRUE(files.at(0).endsWith(QStringLiteral("drums.wav")));
     EXPECT_TRUE(files.at(1).endsWith(QStringLiteral("bass.wav")));
@@ -271,7 +287,7 @@ TEST_F(StemConversionTest, FindStemFilesNamesTheMissingStem) {
     ASSERT_TRUE(writeSineWav(dir.filePath(QStringLiteral("drums.wav")), 44100, 64));
 
     QString errorMessage;
-    EXPECT_TRUE(mixxx::StemConversionJob::findStemFiles(dir.path(), &errorMessage)
+    EXPECT_TRUE(mixxx::StemConversionJob::findStemFiles(dir.path(), QString(), &errorMessage)
                         .isEmpty());
     EXPECT_TRUE(errorMessage.contains(QStringLiteral("Bass")));
 }
@@ -289,9 +305,59 @@ TEST_F(StemConversionTest, FindStemFilesRejectsTwoFilesForOneStem) {
     }
 
     QString errorMessage;
-    EXPECT_TRUE(mixxx::StemConversionJob::findStemFiles(dir.path(), &errorMessage)
+    EXPECT_TRUE(mixxx::StemConversionJob::findStemFiles(dir.path(), QString(), &errorMessage)
                         .isEmpty());
     EXPECT_TRUE(errorMessage.contains(QStringLiteral("Vocals")));
+}
+
+TEST_F(StemConversionTest, FindStemFilesIgnoresTheTrackNameInTheStemNames) {
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    // audio-separator keeps the track name and puts the stem in parentheses.
+    const QString trackName =
+            QStringLiteral("Drum and Bass Anthem (Instrumental Vocal Mix)");
+    const QStringList stemNames = {QStringLiteral("Drums"),
+            QStringLiteral("Bass"),
+            QStringLiteral("Other"),
+            QStringLiteral("Vocals")};
+    for (const QString& stemName : stemNames) {
+        ASSERT_TRUE(writeSineWav(dir.filePath(QStringLiteral("%1_(%2)_htdemucs.wav")
+                                                      .arg(trackName, stemName)),
+                44100,
+                64));
+    }
+
+    QString errorMessage;
+    const QStringList files = mixxx::StemConversionJob::findStemFiles(
+            dir.path(), trackName, &errorMessage);
+    ASSERT_EQ(4, files.size()) << errorMessage.toStdString();
+    for (int stemIndex = 0; stemIndex < stemNames.size(); ++stemIndex) {
+        EXPECT_TRUE(files.at(stemIndex).contains(
+                QStringLiteral("(%1)").arg(stemNames.at(stemIndex))))
+                << files.at(stemIndex).toStdString();
+    }
+}
+
+TEST_F(StemConversionTest, FindStemFilesStripsTheTrackNameWithoutParentheses) {
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const QString trackName = QStringLiteral("Vocal Drum Other Bass Thing");
+    for (const QString& stemName : {QStringLiteral("drums"),
+                 QStringLiteral("bass"),
+                 QStringLiteral("other"),
+                 QStringLiteral("vocals")}) {
+        ASSERT_TRUE(writeSineWav(
+                dir.filePath(QStringLiteral("%1 - %2.wav").arg(trackName, stemName)),
+                44100,
+                64));
+    }
+
+    QString errorMessage;
+    const QStringList files = mixxx::StemConversionJob::findStemFiles(
+            dir.path(), trackName, &errorMessage);
+    ASSERT_EQ(4, files.size()) << errorMessage.toStdString();
+    EXPECT_TRUE(files.at(0).endsWith(QStringLiteral("drums.wav")));
+    EXPECT_TRUE(files.at(3).endsWith(QStringLiteral("vocals.wav")));
 }
 
 TEST_F(StemConversionTest, RescaleBeatsKeepsTheTime) {
@@ -400,26 +466,84 @@ TEST_F(StemConversionTest, JobReportsAMissingTool) {
     mixxx::StemConversionJob job(settings, pSource);
     QSignalSpy spy(&job, &mixxx::StemConversionJob::finished);
     job.start();
-    ASSERT_EQ(1, spy.count());
+    ASSERT_TRUE(spy.count() == 1 || spy.wait(30000));
     EXPECT_EQ(mixxx::StemConversionJob::State::Failed, job.state());
     EXPECT_TRUE(job.errorMessage().contains(
             QStringLiteral("mixxx-no-such-separator")));
     EXPECT_TRUE(job.errorMessage().contains(QStringLiteral("SeparatorCommand")));
 }
 
-TEST_F(StemConversionTest, JobReportsASeparatorError) {
+TEST_F(StemConversionTest, JobReportsAProgramThatCannotRun) {
     QTemporaryDir dir;
     ASSERT_TRUE(dir.isValid());
     TrackPointer pSource = makeSourceTrack(dir.filePath(QStringLiteral("source.wav")));
 
+    // The file is executable but its interpreter is missing, thus the check
+    // of the job passes and the start of the process fails.
+    const QString scriptPath =
+            getTestDir().filePath(QStringLiteral("stems/broken_separator.sh"));
+    ASSERT_TRUE(QFileInfo(scriptPath).isExecutable());
+    mixxx::StemConversionSettings settings = makeSettings(
+            QStringLiteral("ok"), dir.path());
+    settings.setSeparatorCommand(
+            QStringLiteral("\"%1\" $MODEL $OUTPUT_DIR \"$INPUT\"").arg(scriptPath));
+
+    mixxx::StemConversionJob job(settings, pSource);
+    QSignalSpy spy(&job, &mixxx::StemConversionJob::finished);
+    job.start();
+    ASSERT_TRUE(spy.count() == 1 || spy.wait(30000))
+            << "the job never ended, state "
+            << static_cast<int>(job.state());
+    EXPECT_EQ(mixxx::StemConversionJob::State::Failed, job.state());
+    EXPECT_TRUE(job.errorMessage().contains(QStringLiteral("broken_separator.sh")))
+            << job.errorMessage().toStdString();
+}
+
+TEST_F(StemConversionTest, JobReportsASeparatorError) {
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const QDir outputDir(dir.filePath(QStringLiteral("out")));
+    ASSERT_TRUE(QDir().mkpath(outputDir.absolutePath()));
+    TrackPointer pSource = makeSourceTrack(dir.filePath(QStringLiteral("source.wav")));
+
     mixxx::StemConversionJob job(
-            makeSettings(QStringLiteral("fail"), dir.path()), pSource);
+            makeSettings(QStringLiteral("fail"), outputDir.absolutePath()), pSource);
     QSignalSpy spy(&job, &mixxx::StemConversionJob::finished);
     job.start();
     ASSERT_TRUE(spy.count() == 1 || spy.wait(30000));
     EXPECT_EQ(mixxx::StemConversionJob::State::Failed, job.state());
     EXPECT_TRUE(job.errorMessage().contains(QStringLiteral("did not load")))
             << job.errorMessage().toStdString();
+    // No half written file stays behind for a library scan to pick up.
+    EXPECT_TRUE(outputDir.entryList(QDir::Files | QDir::Hidden).isEmpty());
+}
+
+TEST_F(StemConversionTest, JobKeepsTheStemFileOfAnEarlierRun) {
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    TrackPointer pSource = makeSourceTrack(dir.filePath(QStringLiteral("source.wav")));
+
+    const QString stemFilePath = dir.filePath(QStringLiteral("source.stem.mp4"));
+    const QByteArray earlierContent("the stem file of the first run");
+    QFile earlierFile(stemFilePath);
+    ASSERT_TRUE(earlierFile.open(QIODevice::WriteOnly));
+    earlierFile.write(earlierContent);
+    earlierFile.close();
+
+    mixxx::StemConversionJob job(
+            makeSettings(QStringLiteral("ok"), dir.path()), pSource);
+    QSignalSpy spy(&job, &mixxx::StemConversionJob::finished);
+    job.start();
+    ASSERT_TRUE(spy.count() == 1 || spy.wait(30000));
+    EXPECT_EQ(mixxx::StemConversionJob::State::Failed, job.state());
+    EXPECT_TRUE(job.errorMessage().contains(QStringLiteral("exists already")))
+            << job.errorMessage().toStdString();
+
+    // The job owns no file that it did not make.
+    ASSERT_TRUE(QFile::exists(stemFilePath));
+    QFile keptFile(stemFilePath);
+    ASSERT_TRUE(keptFile.open(QIODevice::ReadOnly));
+    EXPECT_EQ(earlierContent, keptFile.readAll());
 }
 
 TEST_F(StemConversionTest, JobCancels) {
@@ -431,7 +555,7 @@ TEST_F(StemConversionTest, JobCancels) {
             makeSettings(QStringLiteral("hang"), dir.path()), pSource);
     QSignalSpy spy(&job, &mixxx::StemConversionJob::finished);
     job.start();
-    ASSERT_EQ(mixxx::StemConversionJob::State::Separating, job.state());
+    ASSERT_TRUE(waitForState(job, mixxx::StemConversionJob::State::Separating));
     job.cancel();
     ASSERT_TRUE(spy.count() == 1 || spy.wait(30000));
     EXPECT_EQ(mixxx::StemConversionJob::State::Cancelled, job.state());
@@ -561,9 +685,8 @@ TEST_F(StemConversionTest, JobEncodesWithTheDefaultTemplateAndKeepsTheFrames) {
     ASSERT_GE(clickFrame, 0) << "no click found in the stem file";
     const int offsetFrames =
             static_cast<int>(kReadStart) + clickFrame - kSourceClickFrame;
-    // The encoder delay must not move the audio, otherwise every cue lands
-    // late. ffmpeg writes an edit list and the reader of Mixxx honors it.
-    // A missing edit list would give one AAC frame, 1024 samples or more.
+    // The encoder delay must not move the audio, otherwise each cue lands
+    // late by one AAC frame, 1024 samples or more.
     EXPECT_EQ(0, offsetFrames) << "the stem audio starts " << offsetFrames
                                << " frames off the source";
 }
@@ -634,4 +757,5 @@ TEST_F(StemConversionTest, JobWritesTheTagsAndKeepsTheStemManifest) {
             metadata.getAlbumInfo().getTitle());
     EXPECT_FALSE(coverImage.isNull()) << "the cover image is missing";
 }
+
 #endif // Q_OS_WIN

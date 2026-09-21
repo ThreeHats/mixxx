@@ -5,9 +5,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QImage>
-#include <QProcess>
 #include <QRegularExpression>
 #include <QStandardPaths>
+#include <QtConcurrentRun>
 #include <cmath>
 
 #include "moc_stemconversionjob.cpp"
@@ -41,7 +41,9 @@ const QStringList kStemKeywords[] = {
         {QStringLiteral("vocals"), QStringLiteral("vocal"), QStringLiteral("voice")},
 };
 
-constexpr int kStandardErrorTailChars = 4000;
+constexpr int kNoStemRole = -1;
+constexpr int kSeveralStemRoles = -2;
+constexpr int kOutputTailChars = 4000;
 constexpr mixxx::audio::SampleRate::value_t kFallbackSampleRate = 44100;
 
 // The file type that gives TagLib the MP4 reader for a stem file.
@@ -51,9 +53,49 @@ const QString kSeparatorLabel = QStringLiteral("SeparatorCommand");
 const QString kEncoderLabel = QStringLiteral("EncoderCommand");
 const QString kMuxerLabel = QStringLiteral("MuxerPath");
 
-QStringList fileNameTokens(const QString& completeBaseName) {
+QStringList fileNameTokens(const QString& name) {
     static const QRegularExpression separatorRegex(QStringLiteral("[^a-z0-9]+"));
-    return completeBaseName.toLower().split(separatorRegex, Qt::SkipEmptyParts);
+    return name.toLower().split(separatorRegex, Qt::SkipEmptyParts);
+}
+
+/// The stem that a name asks for, or kNoStemRole, or kSeveralStemRoles when
+/// the name holds the word of more than one stem.
+int stemRoleOfName(const QString& name) {
+    const QStringList tokens = fileNameTokens(name);
+    int role = kNoStemRole;
+    for (int stemIndex = 0; stemIndex < mixxx::StemConversionSettings::kStemCount;
+            ++stemIndex) {
+        for (const QString& keyword : kStemKeywords[stemIndex]) {
+            if (!tokens.contains(keyword)) {
+                continue;
+            }
+            if (role != kNoStemRole) {
+                return kSeveralStemRoles;
+            }
+            role = stemIndex;
+            break;
+        }
+    }
+    return role;
+}
+
+/// The stem that a separator output file asks for. The text of the last
+/// parentheses wins, because audio-separator writes "Title_(Vocals)_model".
+int stemRoleOfFileName(const QString& completeBaseName, const QString& sourceBaseName) {
+    static const QRegularExpression lastParenthesesRegex(
+            QStringLiteral("\\(([^()]*)\\)[^()]*$"));
+    const QRegularExpressionMatch match = lastParenthesesRegex.match(completeBaseName);
+    if (match.hasMatch()) {
+        const int role = stemRoleOfName(match.captured(1));
+        if (role >= 0) {
+            return role;
+        }
+    }
+    QString strippedName = completeBaseName;
+    if (!sourceBaseName.isEmpty()) {
+        strippedName.remove(sourceBaseName, Qt::CaseInsensitive);
+    }
+    return stemRoleOfName(strippedName);
 }
 
 QString lastLines(const QString& text, int maxChars) {
@@ -61,6 +103,13 @@ QString lastLines(const QString& text, int maxChars) {
         return text;
     }
     return text.right(maxChars);
+}
+
+QString absolutePathOf(const QString& filePath) {
+    if (filePath.isEmpty()) {
+        return filePath;
+    }
+    return QFileInfo(filePath).absoluteFilePath();
 }
 
 } // anonymous namespace
@@ -73,17 +122,27 @@ StemConversionJob::StemConversionJob(const StemConversionSettings& settings,
         : QObject(pParent),
           m_settings(settings),
           m_pSourceTrack(std::move(pSourceTrack)),
-          m_sourceFilePath(m_pSourceTrack ? m_pSourceTrack->getLocation() : QString()),
+          m_sourceFilePath(absolutePathOf(
+                  m_pSourceTrack ? m_pSourceTrack->getLocation() : QString())),
+          m_outputFilePath(m_sourceFilePath.isEmpty()
+                          ? QString()
+                          : settings.outputFilePathFor(m_sourceFilePath)),
           m_pProcess(make_parented<QProcess>(this)),
           m_encodeCount(0),
           m_state(State::Queued),
           m_progress(0.0),
           m_cancelRequested(false) {
-    m_pProcess->setProcessChannelMode(QProcess::SeparateChannels);
+    // Both channels go to one stream, thus neither pipe fills up and the
+    // percentage of a separator is read whichever channel carries it.
+    m_pProcess->setProcessChannelMode(QProcess::MergedChannels);
     connect(m_pProcess,
-            &QProcess::readyReadStandardError,
+            &QProcess::readyReadStandardOutput,
             this,
-            &StemConversionJob::onStandardErrorReady);
+            &StemConversionJob::onOutputReady);
+    connect(m_pProcess,
+            &QProcess::errorOccurred,
+            this,
+            &StemConversionJob::onProcessError);
     connect(m_pProcess,
             QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
             this,
@@ -91,13 +150,21 @@ StemConversionJob::StemConversionJob(const StemConversionSettings& settings,
                 onProcessFinished(
                         exitStatus == QProcess::CrashExit ? -1 : exitCode);
             });
+    connect(&m_watcher,
+            &QFutureWatcher<QString>::finished,
+            this,
+            &StemConversionJob::onAsyncStepFinished);
 }
 
 StemConversionJob::~StemConversionJob() {
+    m_pProcess->disconnect(this);
     if (m_pProcess->state() != QProcess::NotRunning) {
         m_pProcess->kill();
         m_pProcess->waitForFinished(1000);
     }
+    m_watcher.disconnect(this);
+    // The worker holds a pointer to this object, thus it must end first.
+    m_watcher.waitForFinished();
 }
 
 QString StemConversionJob::sourceTitle() const {
@@ -118,14 +185,20 @@ QString StemConversionJob::stateText(State state) {
     switch (state) {
     case State::Queued:
         return tr("Queued");
+    case State::Preparing:
+        return tr("Preparing");
     case State::Separating:
         return tr("Separating");
+    case State::Collecting:
+        return tr("Reading the stem files");
     case State::Encoding:
         return tr("Encoding");
     case State::Muxing:
         return tr("Muxing");
     case State::Tagging:
         return tr("Writing the stem manifest");
+    case State::Finishing:
+        return tr("Writing the tags");
     case State::Succeeded:
         return tr("Done");
     case State::Failed:
@@ -139,6 +212,7 @@ QString StemConversionJob::stateText(State state) {
 
 // static
 QStringList StemConversionJob::findStemFiles(const QString& directoryPath,
+        const QString& sourceBaseName,
         QString* pErrorMessage) {
     const auto fail = [pErrorMessage](const QString& message) {
         if (pErrorMessage) {
@@ -161,28 +235,20 @@ QStringList StemConversionJob::findStemFiles(const QString& directoryPath,
         if (!kAudioSuffixes.contains(fileInfo.suffix().toLower())) {
             continue;
         }
-        const QStringList tokens = fileNameTokens(fileInfo.completeBaseName());
-        for (int stemIndex = 0; stemIndex < StemConversionSettings::kStemCount; ++stemIndex) {
-            bool matches = false;
-            for (const QString& keyword : kStemKeywords[stemIndex]) {
-                if (tokens.contains(keyword)) {
-                    matches = true;
-                    break;
-                }
-            }
-            if (!matches) {
-                continue;
-            }
-            if (!found.at(stemIndex).isEmpty()) {
-                return fail(tr(
-                        "The separator wrote two files for the stem \"%1\": "
-                        "\"%2\" and \"%3\".")
-                                    .arg(stemRoleName(static_cast<StemRole>(stemIndex)),
-                                            QFileInfo(found.at(stemIndex)).fileName(),
-                                            fileInfo.fileName()));
-            }
-            found[stemIndex] = filePath;
+        const int stemIndex = stemRoleOfFileName(
+                fileInfo.completeBaseName(), sourceBaseName);
+        if (stemIndex < 0) {
+            continue;
         }
+        if (!found.at(stemIndex).isEmpty()) {
+            return fail(tr(
+                    "The separator wrote two files for the stem \"%1\": "
+                    "\"%2\" and \"%3\".")
+                                .arg(stemRoleName(static_cast<StemRole>(stemIndex)),
+                                        QFileInfo(found.at(stemIndex)).fileName(),
+                                        fileInfo.fileName()));
+        }
+        found[stemIndex] = filePath;
     }
 
     for (int stemIndex = 0; stemIndex < StemConversionSettings::kStemCount; ++stemIndex) {
@@ -206,33 +272,8 @@ void StemConversionJob::start() {
         fail(tr("The track has no file."));
         return;
     }
-    if (!QFileInfo::exists(m_sourceFilePath)) {
-        fail(tr("The file \"%1\" is missing.").arg(m_sourceFilePath));
-        return;
-    }
-    if (StemInfoImporter::hasStemAtom(m_sourceFilePath)) {
-        fail(tr("The track is a stem file already."));
-        return;
-    }
-
-    m_outputFilePath = m_settings.outputFilePathFor(m_sourceFilePath);
-    if (QFileInfo::exists(m_outputFilePath)) {
-        fail(tr("The file \"%1\" exists already.").arg(m_outputFilePath));
-        return;
-    }
-    const QDir outputDir = QFileInfo(m_outputFilePath).absoluteDir();
-    if (!outputDir.exists() && !outputDir.mkpath(QStringLiteral("."))) {
-        fail(tr("The directory \"%1\" cannot be made.").arg(outputDir.absolutePath()));
-        return;
-    }
-
-    m_pWorkDir = std::make_unique<QTemporaryDir>();
-    if (!m_pWorkDir->isValid()) {
-        fail(tr("A work directory cannot be made: %1").arg(m_pWorkDir->errorString()));
-        return;
-    }
-
-    runSeparator();
+    setProgress(0.02);
+    runAsyncStep(&StemConversionJob::prepare, State::Preparing);
 }
 
 void StemConversionJob::cancel() {
@@ -244,21 +285,207 @@ void StemConversionJob::cancel() {
         m_pProcess->kill();
         return;
     }
+    if (m_watcher.isRunning()) {
+        // The worker sees the request when its step ends.
+        return;
+    }
+    cleanUp();
     setState(State::Cancelled);
     emit finished();
 }
 
-void StemConversionJob::runSeparator() {
-    const QString separatedDirPath =
-            QDir(m_pWorkDir->path()).absoluteFilePath(QStringLiteral("separated"));
-    if (!QDir().mkpath(separatedDirPath)) {
-        fail(tr("The directory \"%1\" cannot be made.").arg(separatedDirPath));
+void StemConversionJob::runAsyncStep(QString (StemConversionJob::*step)(), State state) {
+    setState(state);
+    m_watcher.setFuture(QtConcurrent::run([this, step] {
+        return (this->*step)();
+    }));
+}
+
+void StemConversionJob::onAsyncStepFinished() {
+    const QString errorMessage = m_watcher.result();
+    if (m_cancelRequested) {
+        cleanUp();
+        setState(State::Cancelled);
+        emit finished();
         return;
     }
+    if (!errorMessage.isEmpty()) {
+        fail(errorMessage);
+        return;
+    }
+    switch (m_state) {
+    case State::Preparing:
+        runSeparator();
+        return;
+    case State::Collecting:
+        setProgress(0.7);
+        if (m_settings.encoderCommand().trimmed().isEmpty()) {
+            runMux();
+        } else {
+            m_encodeQueue = m_muxInputs;
+            m_encodeCount = m_encodeQueue.size();
+            m_muxInputs.clear();
+            runNextEncode();
+        }
+        return;
+    case State::Finishing:
+        succeed();
+        return;
+    default:
+        DEBUG_ASSERT(!"unexpected state");
+        return;
+    }
+}
 
+QString StemConversionJob::separatedDirPath() const {
+    return QDir(m_pWorkDir->path()).absoluteFilePath(QStringLiteral("separated"));
+}
+
+QString StemConversionJob::prepare() {
+    if (!QFileInfo::exists(m_sourceFilePath)) {
+        return tr("The file \"%1\" is missing.").arg(m_sourceFilePath);
+    }
+    if (StemInfoImporter::hasStemAtom(m_sourceFilePath)) {
+        return tr("The track is a stem file already.");
+    }
+    if (QFileInfo::exists(m_outputFilePath)) {
+        return tr("The file \"%1\" exists already.").arg(m_outputFilePath);
+    }
+    const QDir outputDir = QFileInfo(m_outputFilePath).absoluteDir();
+    if (!outputDir.exists() && !outputDir.mkpath(QStringLiteral("."))) {
+        return tr("The directory \"%1\" cannot be made.").arg(outputDir.absolutePath());
+    }
+
+    m_pWorkDir = std::make_unique<QTemporaryDir>();
+    if (!m_pWorkDir->isValid()) {
+        return tr("A work directory cannot be made: %1").arg(m_pWorkDir->errorString());
+    }
+    // The muxer splits a file list at a colon, thus such a path cannot pass.
+    if (m_pWorkDir->path().contains(QChar(':'))) {
+        return tr(
+                "The work directory \"%1\" holds a colon. Set TMPDIR to a "
+                "directory without one.")
+                .arg(m_pWorkDir->path());
+    }
+    if (!QDir().mkpath(separatedDirPath())) {
+        return tr("The directory \"%1\" cannot be made.").arg(separatedDirPath());
+    }
+
+    const QDir workDir(m_pWorkDir->path());
+    m_workOutputFilePath = workDir.absoluteFilePath(QStringLiteral("out.stem.mp4"));
+    m_manifestFilePath = workDir.absoluteFilePath(QStringLiteral("stem.json"));
+    QFile manifestFile(m_manifestFilePath);
+    if (!manifestFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return tr("The stem manifest cannot be written to \"%1\".").arg(m_manifestFilePath);
+    }
+    manifestFile.write(stemManifestJson().toUtf8());
+    manifestFile.close();
+
+    m_coverImageFilePath = writeSourceCoverImage();
+    return QString();
+}
+
+QString StemConversionJob::collectStemFiles() {
+    QString errorMessage;
+    const QStringList stemFiles = findStemFiles(separatedDirPath(),
+            QFileInfo(m_sourceFilePath).completeBaseName(),
+            &errorMessage);
+    if (stemFiles.isEmpty()) {
+        return errorMessage;
+    }
+
+    // The muxer takes neither a colon nor a leading dash in a file name,
+    // thus every input gets a plain name in the work directory.
+    QStringList rawInputs;
+    rawInputs.append(m_sourceFilePath);
+    rawInputs.append(stemFiles);
+    m_muxInputs.clear();
+    const QDir workDir(m_pWorkDir->path());
+    for (int index = 0; index < rawInputs.size(); ++index) {
+        const QString rawPath = rawInputs.at(index);
+        const QString safePath = workDir.absoluteFilePath(
+                QStringLiteral("in%1.%2").arg(QString::number(index),
+                        QFileInfo(rawPath).suffix()));
+        if (!QFile::link(rawPath, safePath) && !QFile::copy(rawPath, safePath)) {
+            return tr("The file \"%1\" cannot be given to the muxer.").arg(rawPath);
+        }
+        m_muxInputs.append(safePath);
+    }
+    return QString();
+}
+
+QString StemConversionJob::writeSourceCoverImage() {
+    const QString sourceFileType = QFileInfo(m_sourceFilePath).suffix();
+    if (sourceFileType.isEmpty()) {
+        return QString();
+    }
+    QImage coverImage;
+    MetadataSourceTagLib(m_sourceFilePath, sourceFileType)
+            .importTrackMetadataAndCoverImage(nullptr, &coverImage, false);
+    if (coverImage.isNull()) {
+        return QString();
+    }
+    const QString coverImagePath =
+            QDir(m_pWorkDir->path()).absoluteFilePath(QStringLiteral("cover.jpg"));
+    if (!coverImage.save(coverImagePath, "JPEG", 90)) {
+        return QString();
+    }
+    return coverImagePath;
+}
+
+QString StemConversionJob::exportSourceTags() {
+    const auto result = MetadataSourceTagLib(m_workOutputFilePath, kStemFileType)
+                                .exportTrackMetadata(m_pSourceTrack->getMetadata());
+    if (result.first != MetadataSource::ExportResult::Succeeded) {
+        kLogger.warning() << "Failed to write the tags into" << m_workOutputFilePath;
+    }
+    return QString();
+}
+
+QString StemConversionJob::finish() {
+    exportSourceTags();
+    if (!StemInfoImporter::hasStemAtom(m_workOutputFilePath)) {
+        return tr("The stem file has no stem manifest. The muxer did not write it.");
+    }
+    return moveIntoPlace();
+}
+
+QString StemConversionJob::moveIntoPlace() {
+    const QFileInfo outputFileInfo(m_outputFilePath);
+    const QString partFilePath = outputFileInfo.absoluteDir().absoluteFilePath(
+            QStringLiteral(".%1.part").arg(outputFileInfo.fileName()));
+    QFile::remove(partFilePath);
+    m_partFilePath = partFilePath;
+    // A rename fails across file systems, thus a copy is the fallback.
+    if (!QFile::rename(m_workOutputFilePath, partFilePath) &&
+            !QFile::copy(m_workOutputFilePath, partFilePath)) {
+        cleanUp();
+        return tr("The stem file cannot be moved to \"%1\".").arg(m_outputFilePath);
+    }
+    if (QFileInfo::exists(m_outputFilePath)) {
+        cleanUp();
+        return tr("The file \"%1\" exists already.").arg(m_outputFilePath);
+    }
+    if (!QFile::rename(partFilePath, m_outputFilePath)) {
+        cleanUp();
+        return tr("The stem file cannot be moved to \"%1\".").arg(m_outputFilePath);
+    }
+    m_partFilePath.clear();
+    return QString();
+}
+
+void StemConversionJob::cleanUp() {
+    if (!m_partFilePath.isEmpty()) {
+        QFile::remove(m_partFilePath);
+        m_partFilePath.clear();
+    }
+    m_pWorkDir.reset();
+}
+
+void StemConversionJob::runSeparator() {
     QMap<QString, QString> placeholders;
     placeholders.insert(QStringLiteral("INPUT"), m_sourceFilePath);
-    placeholders.insert(QStringLiteral("OUTPUT_DIR"), separatedDirPath);
+    placeholders.insert(QStringLiteral("OUTPUT_DIR"), separatedDirPath());
     placeholders.insert(QStringLiteral("MODEL"), m_settings.model());
 
     QString errorMessage;
@@ -314,73 +541,26 @@ void StemConversionJob::runMux() {
         command.append(inputPath);
     }
     command.append(QStringLiteral("-new"));
-    command.append(m_outputFilePath);
+    command.append(m_workOutputFilePath);
     setProgress(0.88);
     startProcess(command, State::Muxing);
 }
 
 void StemConversionJob::runTag() {
-    const QString manifestPath =
-            QDir(m_pWorkDir->path()).absoluteFilePath(QStringLiteral("stem.json"));
-    QFile manifestFile(manifestPath);
-    if (!manifestFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        fail(tr("The stem manifest cannot be written to \"%1\".").arg(manifestPath));
-        return;
-    }
-    manifestFile.write(stemManifestJson().toUtf8());
-    manifestFile.close();
-
     QStringList command = {m_settings.muxerPath(), QStringLiteral("-quiet")};
-    const QString coverImagePath = writeSourceCoverImage();
-    if (!coverImagePath.isEmpty()) {
+    if (!m_coverImageFilePath.isEmpty()) {
         command.append(QStringLiteral("-itags"));
-        command.append(QStringLiteral("cover=%1").arg(coverImagePath));
+        command.append(QStringLiteral("cover=%1").arg(m_coverImageFilePath));
     }
     command.append(QStringLiteral("-udta"));
-    command.append(QStringLiteral("0:type=stem:src=%1").arg(manifestPath));
-    command.append(m_outputFilePath);
-    setProgress(0.95);
+    command.append(QStringLiteral("0:type=stem:src=%1").arg(m_manifestFilePath));
+    command.append(m_workOutputFilePath);
+    setProgress(0.93);
     startProcess(command, State::Tagging);
 }
 
-QString StemConversionJob::writeSourceCoverImage() {
-    const QString sourceFileType = m_pSourceTrack->getFileInfo().suffix();
-    if (sourceFileType.isEmpty()) {
-        return QString();
-    }
-    QImage coverImage;
-    MetadataSourceTagLib(m_sourceFilePath, sourceFileType)
-            .importTrackMetadataAndCoverImage(nullptr, &coverImage, false);
-    if (coverImage.isNull()) {
-        return QString();
-    }
-    const QString coverImagePath =
-            QDir(m_pWorkDir->path()).absoluteFilePath(QStringLiteral("cover.jpg"));
-    // The muxer splits its tag list at a colon, thus such a path cannot pass.
-    if (coverImagePath.contains(QChar(':')) ||
-            !coverImage.save(coverImagePath, "JPEG", 90)) {
-        return QString();
-    }
-    return coverImagePath;
-}
-
-void StemConversionJob::exportSourceTags() {
-    const auto result = MetadataSourceTagLib(m_outputFilePath, kStemFileType)
-                                .exportTrackMetadata(m_pSourceTrack->getMetadata());
-    if (result.first != MetadataSource::ExportResult::Succeeded) {
-        kLogger.warning() << "Failed to write the tags into" << m_outputFilePath;
-    }
-}
-
-void StemConversionJob::complete() {
-    exportSourceTags();
-    if (!StemInfoImporter::hasStemAtom(m_outputFilePath)) {
-        fail(tr("The file \"%1\" has no stem manifest. The muxer did not "
-                "write it.")
-                        .arg(m_outputFilePath));
-        return;
-    }
-    m_pWorkDir.reset();
+void StemConversionJob::succeed() {
+    cleanUp();
     setProgress(1.0);
     setState(State::Succeeded);
     emit finished();
@@ -403,17 +583,26 @@ void StemConversionJob::startProcess(const QStringList& command, State state) {
         return;
     }
 
-    m_standardErrorTail.clear();
+    m_outputTail.clear();
     setState(state);
     m_pProcess->setProgram(resolved.isEmpty() ? program : resolved);
     m_pProcess->setArguments(command.mid(1));
     m_pProcess->start(QIODevice::ReadOnly);
 }
 
+void StemConversionJob::onProcessError(QProcess::ProcessError error) {
+    if (error != QProcess::FailedToStart) {
+        // A crash and the other errors come with finished().
+        return;
+    }
+    fail(tr("The program \"%1\" did not start: %2")
+                    .arg(m_pProcess->program(), m_pProcess->errorString()));
+}
+
 void StemConversionJob::onProcessFinished(int exitCode) {
+    onOutputReady();
     if (m_cancelRequested) {
-        m_pWorkDir.reset();
-        QFile::remove(m_outputFilePath);
+        cleanUp();
         setState(State::Cancelled);
         emit finished();
         return;
@@ -422,35 +611,14 @@ void StemConversionJob::onProcessFinished(int exitCode) {
         fail(tr("\"%1\" stopped with the code %2.\n%3")
                         .arg(m_pProcess->program(),
                                 QString::number(exitCode),
-                                m_standardErrorTail));
+                                m_outputTail));
         return;
     }
 
     switch (m_state) {
-    case State::Separating: {
-        QString errorMessage;
-        const QStringList stemFiles = findStemFiles(
-                QDir(m_pWorkDir->path()).absoluteFilePath(QStringLiteral("separated")),
-                &errorMessage);
-        if (stemFiles.isEmpty()) {
-            fail(errorMessage);
-            return;
-        }
-        QStringList rawInputs;
-        rawInputs.append(m_sourceFilePath);
-        rawInputs.append(stemFiles);
-        setProgress(0.7);
-        if (m_settings.encoderCommand().trimmed().isEmpty()) {
-            m_muxInputs = rawInputs;
-            runMux();
-        } else {
-            m_encodeQueue = rawInputs;
-            m_encodeCount = rawInputs.size();
-            m_muxInputs.clear();
-            runNextEncode();
-        }
+    case State::Separating:
+        runAsyncStep(&StemConversionJob::collectStemFiles, State::Collecting);
         return;
-    }
     case State::Encoding:
         runNextEncode();
         return;
@@ -458,7 +626,8 @@ void StemConversionJob::onProcessFinished(int exitCode) {
         runTag();
         return;
     case State::Tagging:
-        complete();
+        setProgress(0.96);
+        runAsyncStep(&StemConversionJob::finish, State::Finishing);
         return;
     default:
         DEBUG_ASSERT(!"unexpected state");
@@ -466,9 +635,12 @@ void StemConversionJob::onProcessFinished(int exitCode) {
     }
 }
 
-void StemConversionJob::onStandardErrorReady() {
-    const QString chunk = QString::fromUtf8(m_pProcess->readAllStandardError());
-    m_standardErrorTail = lastLines(m_standardErrorTail + chunk, kStandardErrorTailChars);
+void StemConversionJob::onOutputReady() {
+    const QString chunk = QString::fromUtf8(m_pProcess->readAllStandardOutput());
+    if (chunk.isEmpty()) {
+        return;
+    }
+    m_outputTail = lastLines(m_outputTail + chunk, kOutputTailChars);
     if (m_state != State::Separating) {
         return;
     }
@@ -490,10 +662,8 @@ void StemConversionJob::fail(const QString& message) {
     }
     m_errorMessage = message;
     kLogger.warning() << "Stem conversion of" << m_sourceFilePath << "failed:" << message;
-    m_pWorkDir.reset();
-    if (!m_outputFilePath.isEmpty()) {
-        QFile::remove(m_outputFilePath);
-    }
+    // The output file of another run is not the property of this job.
+    cleanUp();
     setState(State::Failed);
     emit finished();
 }
