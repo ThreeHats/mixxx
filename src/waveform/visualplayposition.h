@@ -84,6 +84,14 @@ class VisualPlayPosition : public QObject {
     // This is called by SoundDevicePortAudio just after the callback starts.
     static void setCallbackEntryToDacSecs(double secs, const PerformanceTimer& time);
 
+    // The start of the running audio callback and the seconds from it until
+    // the first frame of its buffer reaches the sound card. Only the audio
+    // callback thread may read this, because it is the thread that writes it.
+    static void getCallbackEntryToDacSecs(PerformanceTimer* pTime, double* pSecs) {
+        *pTime = m_timeInfoTime;
+        *pSecs = m_dCallbackEntryToDacSecs;
+    }
+
     void setInvalid() {
         m_valid.store(false);
     };

@@ -5305,6 +5305,44 @@ if(MODPLUG)
   target_link_libraries(mixxx-lib PRIVATE Modplug::Modplug)
 endif()
 
+# OSC state server (muxic fork, see tools/muxic/docs/osc.md)
+find_package(lo)
+default_option(OSC "OSC state server" "lo_FOUND")
+if(OSC)
+  if(NOT lo_FOUND)
+    message(
+      FATAL_ERROR
+      "The OSC state server requires liblo and its development headers."
+    )
+  endif()
+  target_sources(
+    mixxx-lib
+    PRIVATE
+      src/osc/oscaddress.cpp
+      src/osc/oscbeatcontrol.cpp
+      src/osc/oscbeatfeed.cpp
+      src/osc/oscconfig.cpp
+      src/osc/osccontroller.cpp
+      src/osc/oscmessage.cpp
+      src/osc/oscpolicy.cpp
+      src/osc/oscservice.cpp
+      src/preferences/dialog/dlgprefosc.cpp
+      src/preferences/dialog/dlgprefoscdlg.ui
+  )
+  target_compile_definitions(mixxx-lib PUBLIC __OSC__)
+  target_link_libraries(mixxx-lib PRIVATE lo::lo)
+  if(BUILD_TESTING)
+    target_sources(
+      mixxx-test
+      PRIVATE
+        src/test/osc_test.cpp
+        src/test/oscbeatcontrol_test.cpp
+        src/test/osccontroller_test.cpp
+    )
+    target_link_libraries(mixxx-test PRIVATE lo::lo)
+  endif()
+endif()
+
 find_package(Microsoft.GSL CONFIG)
 if(Microsoft.GSL_FOUND)
   target_link_libraries(mixxx-lib PRIVATE Microsoft.GSL::GSL)

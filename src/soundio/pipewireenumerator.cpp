@@ -13,6 +13,7 @@
 #include <QMetaObject>
 #include <QSharedPointer>
 #include <QStringView>
+#include <cmath>
 #include <ranges>
 #include <string>
 
@@ -688,8 +689,14 @@ void PipewireEnumerator::closeDevices() {
 void PipewireEnumerator::callback(const spa_io_position* pos) {
     // This must be the very first call, else timeInfo becomes invalid
     m_clkRefTimer.restart();
+    // clock.delay counts ticks of clock.rate, and it is negative for playback.
+    // An integer division by the denominator drops the output latency.
+    const double clockRateDenom = static_cast<double>(pos->clock.rate.denom);
     VisualPlayPosition::setCallbackEntryToDacSecs(
-            pos->clock.delay / pos->clock.rate.denom, m_clkRefTimer);
+            clockRateDenom > 0 ? std::abs(static_cast<double>(pos->clock.delay)) *
+                            pos->clock.rate.num / clockRateDenom
+                               : 0.0,
+            m_clkRefTimer);
 
     Trace trace("SoundDevicePw::callbackProcessClkRef");
 

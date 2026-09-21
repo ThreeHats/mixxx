@@ -24,6 +24,9 @@
 #include "engine/sync/synccontrol.h"
 #include "mixer/playermanager.h"
 #include "moc_enginebuffer.cpp"
+#ifdef __OSC__
+#include "osc/oscbeatcontrol.h"
+#endif
 #include "preferences/usersettings.h"
 #include "track/track.h"
 #include "util/assert.h"
@@ -244,6 +247,11 @@ EngineBuffer::EngineBuffer(const QString& group,
     // Create the cue controller
     m_pCueControl = new CueControl(group, pConfig);
     addControl(m_pCueControl);
+
+#ifdef __OSC__
+    // Stamps each beat with the instant at which it reaches the sound card.
+    addControl(new mixxx::osc::BeatControl(group, pConfig));
+#endif
 
     connect(m_pLoopingControl,
             &LoopingControl::loopReset,

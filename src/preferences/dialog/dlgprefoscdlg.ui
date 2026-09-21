@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DlgPrefOscDlg</class>
+ <widget class="QWidget" name="DlgPrefOscDlg">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>560</width>
+    <height>380</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>OSC Preferences</string>
+  </property>
+  <layout class="QVBoxLayout" name="OscLayout">
+   <item>
+    <widget class="QCheckBox" name="CheckBoxEnabled">
+     <property name="text">
+      <string>Enable the OSC state server</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="GroupBoxListen">
+     <property name="title">
+      <string>Listen</string>
+     </property>
+     <layout class="QGridLayout" name="ListenGridLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="LabelBindAddress">
+        <property name="text">
+         <string>Bind address</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="LineEditBindAddress">
+        <property name="toolTip">
+         <string>The address that the server listens on. 127.0.0.1 keeps it on this computer.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="LabelPort">
+        <property name="text">
+         <string>Port</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="SpinBoxPort">
+        <property name="minimum">
+         <number>1</number>
+        </property>
+        <property name="maximum">
+         <number>65535</number>
+        </property>
+        <property name="value">
+         <number>9000</number>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="0" colspan="2">
+       <widget class="QCheckBox" name="CheckBoxAllowAnyHost">
+        <property name="text">
+         <string>Answer a state request from any host</string>
+        </property>
+        <property name="toolTip">
+         <string>Without this, only this computer and the targets can ask for the state.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0" colspan="2">
+       <widget class="QCheckBox" name="CheckBoxAllowAll">
+        <property name="text">
+         <string>Let a message write any control</string>
+        </property>
+        <property name="toolTip">
+         <string>Without this, a message may write only the transport controls.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="GroupBoxSend">
+     <property name="title">
+      <string>Send</string>
+     </property>
+     <layout class="QGridLayout" name="SendGridLayout">
+      <item row="0" column="0">
+       <widget class="QLabel" name="LabelTargets">
+        <property name="text">
+         <string>Targets</string>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QLineEdit" name="LineEditTargets">
+        <property name="toolTip">
+         <string>Host and port of each reader, separated by commas, for example 127.0.0.1:9001</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="LabelSnapshot">
+        <property name="text">
+         <string>Snapshot every</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QSpinBox" name="SpinBoxSnapshot">
+        <property name="suffix">
+         <string> s</string>
+        </property>
+        <property name="minimum">
+         <number>0</number>
+        </property>
+        <property name="maximum">
+         <number>3600</number>
+        </property>
+        <property name="value">
+         <number>10</number>
+        </property>
+        <property name="toolTip">
+         <string>The time between two full state messages. 0 sends none.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="LabelPublishFile">
+     <property name="text">
+      <string>Publish list</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="OscSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

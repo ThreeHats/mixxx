@@ -53,6 +53,10 @@
 #include "preferences/dialog/dlgprefstems.h"
 #endif // __STEM__
 
+#ifdef __OSC__
+#include "preferences/dialog/dlgprefosc.h"
+#endif // __OSC__
+
 #ifdef Q_OS_MACOS
 #include "util/darkappearance.h"
 #endif
@@ -262,6 +266,14 @@ DlgPreferences::DlgPreferences(
             tr("Stems"),
             "ic_preferences_stems.svg");
 #endif // __STEM__
+
+#ifdef __OSC__
+    addPageWidget(PreferencesPage(
+                          new DlgPrefOsc(this, m_pConfig),
+                          new QTreeWidgetItem(contentsTreeWidget, QTreeWidgetItem::Type)),
+            tr("OSC"),
+            "ic_preferences_broadcast.svg");
+#endif // __OSC__
 
     // Find accept and apply buttons
     const auto buttons = buttonBox->buttons();
