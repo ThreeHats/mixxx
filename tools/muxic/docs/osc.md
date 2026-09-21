@@ -43,7 +43,9 @@ A control message carries one `f` (32-bit float) argument. It holds the value
 of the control, in the units of Mixxx.
 
 The module drops a group or a key that holds a character which OSC keeps for
-its patterns (space, `#`, `*`, `,`, `/`, `?`, `[`, `]`, `{`, `}`).
+its patterns (space, `#`, `*`, `,`, `/`, `?`, `[`, `]`, `{`, `}`). It also
+drops anything that is not printable ASCII, thus an accent or a tab in a
+group name gives no address.
 
 ### What the module sends by default
 
@@ -111,8 +113,16 @@ The length of the track is the control `duration`, in seconds.
 For a track with one tempo, the anchor is the first downbeat of the grid, thus
 `beat % 4 == 0` marks a bar. For a track with tempo markers, the anchor is the
 first marker. A beat before the anchor gets a negative number. This count does
-not restart at a play press, and a loop moves it back. Argument 4 only rises,
-thus a reader sees at once that a beat was lost.
+not restart at a play press, and a loop moves it back.
+
+Argument 4 rises by one on each beat that the deck sends, thus a gap in it
+says that a beat was lost. It starts again at 1 when the deck takes a new
+track or a new beat grid.
+
+**Which groups send a beat.** A deck always does. A sampler does when
+`[Osc] SamplerBeats` is 1 in `mixxx.cfg`. A preview deck never does, because
+it plays to the headphones. The setting is read while Mixxx builds its decks,
+thus it needs a restart of Mixxx, not only Apply.
 
 **The clock.** The stamp is `std::chrono::steady_clock`. On Linux with glibc
 that clock is `clock_gettime(CLOCK_MONOTONIC)`. Node gets the same clock from
@@ -133,13 +143,30 @@ engine takes it from three numbers:
 3. The place of the beat inside the buffer. The engine knows the frame of the
    beat and the frames that the buffer carries.
 
-**The error.** About 1 ms, and not more than one buffer period.
+**The error.** The number below is not measured on the rig. Measure it before
+you trust it: play a click track, record the main output and the OSC stamps
+together, and compare. The parts that do not depend on the backend are small.
 
 | Source | Size |
 |---|---|
-| The DAC time of the sound API | Below 1 ms with a good driver. Mixxx falls back to a CPU estimate when the API reports a time that does not add up, and then the error can reach one buffer period (21 ms at 1024 frames and 48 kHz) |
 | The rate inside one buffer is taken as constant | Below one frame, about 20 µs at 48 kHz |
 | Two reads of the clock in the same callback | Below 1 µs |
+| Rounding to nanoseconds | Below 1 ns |
+
+The part that depends on the backend is the time from the audio callback to
+the outputs. Mixxx measures it for the waveform, and this module reads the
+same number.
+
+| Backend | What gives the time | What to expect |
+|---|---|---|
+| PortAudio with ALSA | `outputBufferDacTime` of PortAudio. Mixxx compares it with its own CPU timer and takes a CPU estimate instead when the two disagree by more than 10 %, clamped to two buffer periods | Below 1 ms with a driver that reports a true time. One buffer period (21 ms at 1024 frames and 48 kHz) when Mixxx falls back |
+| PortAudio with JACK, which the muxic rig uses through `pw-jack` | The same `outputBufferDacTime`, which the JACK host API builds from the JACK time and the latency of the output port | It follows what the JACK server reports for the port latency. Measure it |
+| PipeWire, the backend of Mixxx itself | `clock.delay` of the graph, scaled by `clock.rate`. Upstream Mixxx divides an integer by the denominator of that rate, thus the number is 0 and the whole output latency is lost. This fork corrects it | Below 1 ms after the fix |
+
+**The main delay counts too.** `[Master] delay` is a delay line that runs
+after the engine, thus it moves the sound later than the buffer. The stamp
+adds it. `headDelay` and `boothDelay` move only the headphones and the booth,
+thus the stamp does not hold them.
 
 **When a deck sends no beat.** The deck sends a beat only while it plays
 forward at a rate above 0.01, and only when the beat falls inside the buffer
@@ -194,6 +221,13 @@ A reader that starts after Mixxx needs the whole state. Three ways give it:
 | `/mixxx/snapshot` | Mixxx sends the state to the sender of the message |
 | `/mixxx/subscribe` | Mixxx sends the state to the sender, then keeps it as a target for 60 seconds |
 | `/mixxx/unsubscribe` | Mixxx drops the sender from its targets |
+
+Mixxx answers one of these only when the sender is on this computer or when
+its address is in **Targets**. **Answer a state request from any host** in the
+preferences removes that limit. Read **Security** before you select it.
+
+At most 8 readers can subscribe at one time, and one reader gets at most one
+snapshot per second.
 
 `/mixxx/subscribe` takes one number argument. It is the port to send to. With
 no argument, Mixxx answers to the port that the message came from.
@@ -250,6 +284,8 @@ Push Apply in the preferences, or set `[Osc] reload`, to read the file again.
 | `SnapshotIntervalSeconds` | 10 | The period of the snapshot timer. 0 stops it |
 | `AllowAllControls` | 0 | 1 lets a message write any control |
 | `AllowedKeys` | empty | Globs for the allow list. Empty keeps the built-in list |
+| `AllowRequestFromAnyHost` | 0 | 1 answers a state request from any host |
+| `SamplerBeats` | 0 | 1 lets a sampler send a beat message too. Mixxx must restart |
 
 An IPv6 target needs brackets, for example `[::1]:9001`.
 
@@ -259,6 +295,17 @@ An IPv6 target needs brackets, for example `[::1]:9001`.
   it. To take messages from the network, change `ListenHost`.
 - The server has no password and no encryption. OSC over UDP carries neither.
   Keep the bind address on the loopback, or put the port behind a firewall.
+- **A false source address.** UDP does not prove where a datagram came from.
+  One small request makes about 70 datagrams, thus an open server can send
+  much more traffic to a third computer than the attacker sent to Mixxx. To
+  hold that down, Mixxx answers a state request only from this computer or
+  from a configured target, it keeps at most 8 readers, and it gives one
+  reader at most one snapshot per second. **Answer a state request from any
+  host** removes the first of these three. Select it only on a network that
+  you trust.
+- The module reads a datagram of at most 8192 bytes, and it writes a control
+  only from a number. A message with text, a blob or nothing in its first
+  argument changes no control.
 - The allow list stops a message from writing a control that is not transport.
   Keep **Let a message write any control** off unless you trust every program
   that can reach the port.
@@ -305,6 +352,8 @@ service until the OSC path holds the beat as well.
 ## What is not done
 
 - The module reads a plain OSC message. It does not read an OSC bundle.
+- `SamplerBeats` needs a restart of Mixxx, because the engine reads it while
+  it builds a deck.
 - A snapshot is one datagram per message. It is not one bundle.
 - The module has no OSC query protocol, thus a reader cannot ask for the list
   of addresses.
