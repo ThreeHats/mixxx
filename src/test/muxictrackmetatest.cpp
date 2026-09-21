@@ -2,14 +2,18 @@
 
 #include <QDateTime>
 #include <QSqlQuery>
+#include <QThread>
 #include <QVariant>
 
+#include "library/relocatedtrack.h"
 #include "library/trackcollection.h"
 #include "muxic/librarycolumns.h"
 #include "muxic/trackmeta.h"
 #include "muxic/trackmetadao.h"
+#include "muxic/trackmetapoller.h"
 #include "test/librarytest.h"
 #include "track/track.h"
+#include "track/trackref.h"
 #include "util/math.h"
 
 namespace {
@@ -23,6 +27,18 @@ class MuxicTrackMetaTest : public LibraryTest {
     TrackId addTrack(QStringView type) {
         const TrackPointer pTrack = getOrAddTrackByLocation(getTestFile(type));
         return pTrack ? pTrack->getId() : TrackId();
+    }
+
+    /// A write as the muxic hub does it, with an explicit stamp.
+    void hubWrite(TrackId trackId, int energy, qint64 updatedAt) const {
+        QSqlQuery query(internalCollection()->database());
+        query.prepare(QStringLiteral(
+                "INSERT OR REPLACE INTO muxic_track_meta "
+                "(track_id, muxic_energy, updated_at) VALUES (:id, :energy, :updated)"));
+        query.bindValue(QStringLiteral(":id"), trackId.toVariant());
+        query.bindValue(QStringLiteral(":energy"), energy);
+        query.bindValue(QStringLiteral(":updated"), updatedAt);
+        EXPECT_TRUE(query.exec());
     }
 
     int countRows() const {
@@ -100,38 +116,127 @@ TEST_F(MuxicTrackMetaTest, PurgeRemovesTheRow) {
     EXPECT_TRUE(dao().setEnergy(trackId, 5));
     EXPECT_EQ(1, countRows());
 
-    dao().purgeTracks(QSet<TrackId>{trackId});
+    trackCollectionManager()->purgeTracks(
+            QList<TrackRef>{TrackRef::fromFilePath(getTestFile(QStringLiteral("-png.mp3")), trackId)});
     EXPECT_EQ(0, countRows());
-    EXPECT_FALSE(dao().read(trackId).energy.has_value());
 }
 
-TEST_F(MuxicTrackMetaTest, ReloadReportsTheChangedRows) {
+TEST_F(MuxicTrackMetaTest, HideKeepsTheRow) {
+    // Hiding a track keeps its library row, thus the values must stay. The
+    // Hidden view shows them.
     const TrackId trackId = addTrack(QStringLiteral("-png.mp3"));
     ASSERT_TRUE(trackId.isValid());
+    EXPECT_TRUE(dao().setEnergy(trackId, 5));
+    EXPECT_TRUE(dao().setTags(trackId, {QStringLiteral("vocal")}));
 
-    QSet<TrackId> reported;
-    QObject::connect(&dao(),
-            &muxic::TrackMetaDao::tracksChanged,
-            [&reported](const QSet<TrackId>& trackIds) {
-                reported.unite(trackIds);
-            });
+    ASSERT_TRUE(trackCollectionManager()->hideTracks(QList<TrackId>{trackId}));
 
-    // A write from outside of Mixxx, as the hub does it.
+    EXPECT_EQ(1, countRows());
+    const muxic::TrackMeta meta = dao().read(trackId);
+    EXPECT_EQ(5, meta.energy.value_or(0));
+    EXPECT_EQ(QStringList{QStringLiteral("vocal")}, meta.tags);
+}
+
+TEST_F(MuxicTrackMetaTest, RelocateCarriesTheRowToTheSurvivor) {
+    const TrackId removedTrackId = addTrack(QStringLiteral("-png.mp3"));
+    const TrackId keptTrackId = addTrack(QStringLiteral("-jpg.mp3"));
+    ASSERT_TRUE(removedTrackId.isValid());
+    ASSERT_TRUE(keptTrackId.isValid());
+    EXPECT_TRUE(dao().setEnergy(removedTrackId, 6));
+    EXPECT_TRUE(dao().setTags(removedTrackId, {QStringLiteral("bass")}));
+
+    // A merge keeps the id of the track that was missing and removes the id of
+    // the track that the scan added.
+    const QList<RelocatedTrack> relocated{
+            RelocatedTrack(TrackRef::fromFilePath(QStringLiteral("/old/a.mp3"), keptTrackId),
+                    TrackRef::fromFilePath(QStringLiteral("/new/a.mp3"), removedTrackId))};
+    dao().relocateTracks(relocated);
+
+    EXPECT_EQ(1, countRows());
+    const muxic::TrackMeta meta = dao().read(keptTrackId);
+    EXPECT_EQ(6, meta.energy.value_or(0));
+    EXPECT_EQ(QStringList{QStringLiteral("bass")}, meta.tags);
+}
+
+TEST_F(MuxicTrackMetaTest, RelocateKeepsTheValuesOfTheSurvivor) {
+    const TrackId removedTrackId = addTrack(QStringLiteral("-png.mp3"));
+    const TrackId keptTrackId = addTrack(QStringLiteral("-jpg.mp3"));
+    ASSERT_TRUE(removedTrackId.isValid());
+    ASSERT_TRUE(keptTrackId.isValid());
+    EXPECT_TRUE(dao().setEnergy(removedTrackId, 6));
+    EXPECT_TRUE(dao().setEnergy(keptTrackId, 2));
+
+    const QList<RelocatedTrack> relocated{
+            RelocatedTrack(TrackRef::fromFilePath(QStringLiteral("/old/a.mp3"), keptTrackId),
+                    TrackRef::fromFilePath(QStringLiteral("/new/a.mp3"), removedTrackId))};
+    dao().relocateTracks(relocated);
+
+    EXPECT_EQ(1, countRows());
+    EXPECT_EQ(2, dao().read(keptTrackId).energy.value_or(0));
+}
+
+TEST_F(MuxicTrackMetaTest, OrphanedRowsGoAway) {
+    const TrackId trackId = addTrack(QStringLiteral("-png.mp3"));
+    ASSERT_TRUE(trackId.isValid());
+    EXPECT_TRUE(dao().setEnergy(trackId, 5));
+
+    // The hub purged a track while Mixxx was closed. SQLite does not enforce
+    // the REFERENCES clause, thus the row stays behind.
     QSqlQuery query(internalCollection()->database());
     query.prepare(QStringLiteral(
             "INSERT INTO muxic_track_meta (track_id, muxic_energy, updated_at) "
-            "VALUES (:id, 8, :updated)"));
-    query.bindValue(QStringLiteral(":id"), trackId.toVariant());
-    query.bindValue(QStringLiteral(":updated"), QDateTime::currentMSecsSinceEpoch());
+            "VALUES (987654, 3, 1)"));
     ASSERT_TRUE(query.exec());
+    EXPECT_EQ(2, countRows());
 
-    dao().reloadChanged();
-    EXPECT_EQ(QSet<TrackId>{trackId}, reported);
+    // Opening the database removes them.
+    dao().initialize(internalCollection()->database());
+    EXPECT_EQ(1, countRows());
+    EXPECT_EQ(5, dao().read(trackId).energy.value_or(0));
+}
 
-    // A second call reports nothing, because nothing changed again.
+TEST_F(MuxicTrackMetaTest, PollReportsRowsThatShareOneStamp) {
+    const TrackId trackA = addTrack(QStringLiteral("-png.mp3"));
+    const TrackId trackB = addTrack(QStringLiteral("-jpg.mp3"));
+    ASSERT_TRUE(trackA.isValid());
+    ASSERT_TRUE(trackB.isValid());
+
+    // The poll has a thread and a connection of its own, as it does in Mixxx.
+    QThread pollThread;
+    muxic::TrackMetaPoller poller(dbConnectionPooler(), 0);
+    poller.moveToThread(&pollThread);
+    pollThread.start();
+    QSet<TrackId> reported;
+    QObject::connect(&poller,
+            &muxic::TrackMetaPoller::tracksChanged,
+            [&reported](const QSet<TrackId>& trackIds) {
+                reported.unite(trackIds);
+            });
+    const auto callPoller = [&poller](const char* method) {
+        QMetaObject::invokeMethod(&poller, method, Qt::BlockingQueuedConnection);
+    };
+    callPoller("start");
+
+    // The hub commits row by row. Both rows carry the same millisecond, and a
+    // poll runs between the two commits.
+    const qint64 stamp = QDateTime::currentMSecsSinceEpoch();
+    hubWrite(trackA, 4, stamp);
+    callPoller("poll");
+    EXPECT_EQ(QSet<TrackId>{trackA}, reported);
+
     reported.clear();
-    dao().reloadChanged();
+    hubWrite(trackB, 5, stamp);
+    callPoller("poll");
+    EXPECT_EQ(QSet<TrackId>{trackB}, reported);
+
+    // A poll with no new row reports nothing.
+    reported.clear();
+    callPoller("poll");
     EXPECT_TRUE(reported.isEmpty());
+
+    callPoller("stop");
+    pollThread.quit();
+    pollThread.wait();
 }
 
 TEST(MuxicTagsTest, NormalizeAndEncode) {

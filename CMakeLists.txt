@@ -1515,6 +1515,7 @@ add_library(
   src/muxic/searchfilters.cpp
   src/muxic/trackmeta.cpp
   src/muxic/trackmetadao.cpp
+  src/muxic/trackmetapoller.cpp
   src/nativeeventhandlerwin.cpp
   src/network/jsonwebtask.cpp
   src/network/networktask.cpp

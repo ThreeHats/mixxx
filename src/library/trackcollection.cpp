@@ -13,10 +13,6 @@ namespace {
 
 mixxx::Logger kLogger("TrackCollection");
 
-/// How often the fork table muxic_track_meta is read again. The muxic hub
-/// writes it from outside while Mixxx runs.
-constexpr int kMuxicTrackMetaPollMillis = 5000;
-
 } // anonymous namespace
 
 TrackCollection::TrackCollection(
@@ -52,10 +48,6 @@ TrackCollection::TrackCollection(
             this,
             &TrackCollection::multipleTracksChanged,
             /*signal-to-signal*/ Qt::DirectConnection);
-    connect(&m_trackDao,
-            &TrackDAO::tracksRemoved,
-            &m_muxicTrackMetaDao,
-            &muxic::TrackMetaDao::purgeTracks);
 }
 
 TrackCollection::~TrackCollection() {
@@ -87,7 +79,7 @@ void TrackCollection::connectDatabase(const QSqlDatabase& database) {
     m_analysisDao.initialize(database);
     m_libraryHashDao.initialize(database);
     m_crates.connectDatabase(database);
-    m_muxicTrackMetaDao.initialize(database, kMuxicTrackMetaPollMillis);
+    m_muxicTrackMetaDao.initialize(database);
 }
 
 void TrackCollection::disconnectDatabase() {
@@ -414,6 +406,9 @@ bool TrackCollection::purgeTracks(
     QSet<CrateId> modifiedCrateSummaries(
             m_crates.collectCrateIdsOfTracks(trackIds));
     VERIFY_OR_DEBUG_ASSERT(m_crates.onPurgingTracks(trackIds)) {
+        return false;
+    }
+    VERIFY_OR_DEBUG_ASSERT(m_muxicTrackMetaDao.onPurgingTracks(trackIds)) {
         return false;
     }
     VERIFY_OR_DEBUG_ASSERT(transaction.commit()) {

@@ -20,6 +20,7 @@
 #include "library/library_prefs.h"
 #include "library/queryutil.h"
 #include "moc_trackdao.cpp"
+#include "muxic/trackmetadao.h"
 #include "sources/soundsourceproxy.h"
 #include "track/beats.h"
 #include "track/globaltrackcache.h"
@@ -400,6 +401,9 @@ void TrackDAO::slotDatabaseTracksRelocated(const QList<RelocatedTrack>& relocate
     }
     DEBUG_ASSERT(removedTrackIds.size() <= changedTrackIds.size());
     DEBUG_ASSERT(!removedTrackIds.intersects(changedTrackIds));
+    if (muxic::TrackMetaDao* pMuxicDao = muxic::TrackMetaDao::instance()) {
+        pMuxicDao->relocateTracks(relocatedTracks);
+    }
     if (!removedTrackIds.isEmpty()) {
         emit tracksRemoved(removedTrackIds);
     }

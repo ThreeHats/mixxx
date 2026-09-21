@@ -20,6 +20,9 @@ namespace {
 
 const mixxx::Logger kLogger("TrackCollectionManager");
 
+/// How often the fork table muxic_track_meta is read again.
+constexpr int kMuxicTrackMetaPollMillis = 5000;
+
 inline
 parented_ptr<TrackCollection> createInternalTrackCollection(
         TrackCollectionManager* parent,
@@ -70,6 +73,12 @@ TrackCollectionManager::TrackCollectionManager(
         // Exclude the library scanner from tests
         kLogger.info() << "Library scanner is disabled in test mode";
     } else {
+        // The muxic hub writes muxic_track_meta from another process. A thread
+        // of its own watches the table, see
+        // tools/muxic/docs/library-columns.md.
+        m_pInternalCollection->getMuxicTrackMetaDAO().startPolling(
+                pDbConnectionPool, kMuxicTrackMetaPollMillis);
+
         m_pScanner = std::make_unique<LibraryScanner>(pDbConnectionPool, pConfig);
 
         connect(
@@ -187,6 +196,7 @@ TrackCollectionManager::~TrackCollectionManager() {
         externalCollection->finishPendingTasksAndDisconnect(); // synchronous
     }
 
+    m_pInternalCollection->getMuxicTrackMetaDAO().stopPolling();
     m_pInternalCollection->disconnectDatabase();
 
     GlobalTrackCache::destroyInstance();

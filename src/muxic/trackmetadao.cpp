@@ -2,15 +2,20 @@
 
 #include <QDateTime>
 #include <QSqlQuery>
-#include <QTimer>
+#include <QSqlRecord>
+#include <QThread>
 #include <algorithm>
 
 #include "library/queryutil.h"
+#include "library/relocatedtrack.h"
 #include "moc_trackmetadao.cpp"
+#include "muxic/trackmetapoller.h"
 #include "util/assert.h"
-#include "util/math.h"
+#include "util/logger.h"
 
 namespace {
+
+const mixxx::Logger kLogger("muxic::TrackMetaDao");
 
 muxic::TrackMetaDao* s_pInstance = nullptr;
 
@@ -26,17 +31,26 @@ const QString kCreateIndex = QStringLiteral(
         "CREATE INDEX IF NOT EXISTS muxic_track_meta_updated_at "
         "ON muxic_track_meta (updated_at)");
 
+const QStringList kExpectedColumns = {
+        QStringLiteral("track_id"),
+        QStringLiteral("muxic_energy"),
+        QStringLiteral("muxic_danceability"),
+        QStringLiteral("muxic_tags"),
+        QStringLiteral("updated_at")};
+
 } // namespace
 
 namespace muxic {
 
 TrackMetaDao::TrackMetaDao(QObject* parent)
         : QObject(parent),
-          m_pPollTimer(nullptr),
-          m_lastUpdatedAt(0) {
+          m_pollMillis(0),
+          m_pPollThread(nullptr),
+          m_pPoller(nullptr) {
 }
 
 TrackMetaDao::~TrackMetaDao() {
+    stopPolling();
     if (s_pInstance == this) {
         s_pInstance = nullptr;
     }
@@ -47,7 +61,7 @@ TrackMetaDao* TrackMetaDao::instance() {
     return s_pInstance;
 }
 
-void TrackMetaDao::initialize(const QSqlDatabase& database, int pollMillis) {
+void TrackMetaDao::initialize(const QSqlDatabase& database) {
     m_database = database;
     // The track properties dialog has no path to the track collection, thus
     // the object that holds the open database makes itself reachable.
@@ -61,25 +75,100 @@ void TrackMetaDao::initialize(const QSqlDatabase& database, int pollMillis) {
     if (!query.exec(kCreateIndex)) {
         LOG_FAILED_QUERY(query);
     }
+    warnAboutForeignTableShape();
 
-    // The library cache reads the table with the rest of the row, thus only
-    // rows that change after this moment need a report.
-    if (query.exec(QStringLiteral("SELECT MAX(updated_at) FROM muxic_track_meta")) &&
-            query.next()) {
-        m_lastUpdatedAt = query.value(0).toLongLong();
+    const int orphans = deleteOrphanedRows();
+    if (orphans > 0) {
+        kLogger.info() << "Removed" << orphans << "rows of tracks that left the library";
     }
 
-    if (pollMillis > 0 && !m_pPollTimer) {
-        m_pPollTimer = new QTimer(this);
-        connect(m_pPollTimer, &QTimer::timeout, this, &TrackMetaDao::reloadChanged);
-        m_pPollTimer->start(pollMillis);
+    // A database that opens a second time gets the poll back.
+    if (m_pDbConnectionPool && !m_pPollThread) {
+        startPolling(m_pDbConnectionPool, m_pollMillis);
     }
 }
 
-void TrackMetaDao::finish() {
-    if (m_pPollTimer) {
-        m_pPollTimer->stop();
+void TrackMetaDao::warnAboutForeignTableShape() {
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral("PRAGMA table_info(%1)").arg(kTrackMetaTable));
+    if (!query.exec()) {
+        LOG_FAILED_QUERY(query);
+        return;
     }
+    QStringList columns;
+    bool hasPrimaryKey = false;
+    while (query.next()) {
+        columns.append(query.value(QStringLiteral("name")).toString());
+        if (query.value(QStringLiteral("name")).toString() == kTrackMetaTrackId &&
+                query.value(QStringLiteral("pk")).toInt() > 0) {
+            hasPrimaryKey = true;
+        }
+    }
+    for (const QString& expected : kExpectedColumns) {
+        if (!columns.contains(expected)) {
+            kLogger.warning() << "Table" << kTrackMetaTable << "has no column"
+                              << expected << "- the columns stay empty";
+        }
+    }
+    if (!hasPrimaryKey) {
+        kLogger.warning() << "Table" << kTrackMetaTable << "has no primary key on"
+                          << kTrackMetaTrackId
+                          << "- a second row for one track repeats the track "
+                             "in every library view";
+    }
+}
+
+int TrackMetaDao::deleteOrphanedRows() {
+    if (!m_database.isOpen()) {
+        return 0;
+    }
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral(
+            "DELETE FROM %1 WHERE %2 NOT IN (SELECT id FROM library)")
+                          .arg(kTrackMetaTable, kTrackMetaTrackId));
+    if (!query.exec()) {
+        LOG_FAILED_QUERY(query);
+        return 0;
+    }
+    return query.numRowsAffected();
+}
+
+void TrackMetaDao::startPolling(mixxx::DbConnectionPoolPtr pDbConnectionPool, int pollMillis) {
+    VERIFY_OR_DEBUG_ASSERT(!m_pPollThread) {
+        return;
+    }
+    if (!pDbConnectionPool || pollMillis <= 0) {
+        return;
+    }
+    m_pDbConnectionPool = pDbConnectionPool;
+    m_pollMillis = pollMillis;
+    m_pPoller = new TrackMetaPoller(std::move(pDbConnectionPool), pollMillis);
+    m_pPollThread = new QThread(this);
+    m_pPollThread->setObjectName(QStringLiteral("muxic meta poll"));
+    m_pPoller->moveToThread(m_pPollThread);
+    connect(m_pPollThread, &QThread::started, m_pPoller, &TrackMetaPoller::start);
+    connect(m_pPollThread, &QThread::finished, m_pPoller, &QObject::deleteLater);
+    connect(m_pPoller,
+            &TrackMetaPoller::tracksChanged,
+            this,
+            &TrackMetaDao::tracksChanged);
+    m_pPollThread->start();
+}
+
+void TrackMetaDao::stopPolling() {
+    if (!m_pPollThread) {
+        return;
+    }
+    QMetaObject::invokeMethod(m_pPoller, "stop", Qt::BlockingQueuedConnection);
+    m_pPollThread->quit();
+    m_pPollThread->wait();
+    delete m_pPollThread;
+    m_pPollThread = nullptr;
+    m_pPoller = nullptr;
+}
+
+void TrackMetaDao::finish() {
+    stopPolling();
     if (s_pInstance == this) {
         s_pInstance = nullptr;
     }
@@ -164,49 +253,68 @@ bool TrackMetaDao::write(TrackId trackId, const QString& column, const QVariant&
     }
     transaction.commit();
 
-    m_lastUpdatedAt = math_max(m_lastUpdatedAt, updatedAt);
     emit tracksChanged(QSet<TrackId>{trackId});
     return true;
 }
 
-void TrackMetaDao::purgeTracks(const QSet<TrackId>& trackIds) {
+bool TrackMetaDao::onPurgingTracks(const QList<TrackId>& trackIds) {
     if (trackIds.isEmpty() || !m_database.isOpen()) {
-        return;
-    }
-    QStringList idStrings;
-    idStrings.reserve(trackIds.size());
-    for (const auto& trackId : trackIds) {
-        idStrings << trackId.toString();
+        return true;
     }
     QSqlQuery query(m_database);
-    query.prepare(QStringLiteral("DELETE FROM muxic_track_meta WHERE track_id IN (%1)")
-                          .arg(idStrings.join(QChar(','))));
-    if (!query.exec()) {
+    if (!query.prepare(QStringLiteral("DELETE FROM %1 WHERE %2=:trackId")
+                               .arg(kTrackMetaTable, kTrackMetaTrackId))) {
         LOG_FAILED_QUERY(query);
+        return false;
     }
+    for (const auto& trackId : trackIds) {
+        query.bindValue(QStringLiteral(":trackId"), trackId.toVariant());
+        if (!query.exec()) {
+            LOG_FAILED_QUERY(query);
+            return false;
+        }
+    }
+    return true;
 }
 
-void TrackMetaDao::reloadChanged() {
-    if (!m_database.isOpen()) {
+void TrackMetaDao::relocateTracks(const QList<RelocatedTrack>& relocatedTracks) {
+    if (relocatedTracks.isEmpty() || !m_database.isOpen()) {
         return;
     }
-    QSqlQuery query(m_database);
-    query.setForwardOnly(true);
-    query.prepare(QStringLiteral(
-            "SELECT track_id, updated_at FROM muxic_track_meta "
-            "WHERE updated_at > :since"));
-    query.bindValue(QStringLiteral(":since"), m_lastUpdatedAt);
-    if (!query.exec()) {
-        LOG_FAILED_QUERY(query);
-        return;
+    QSet<TrackId> changedTrackIds;
+    for (const auto& relocatedTrack : relocatedTracks) {
+        const TrackId removedTrackId = relocatedTrack.deletedTrackId();
+        const TrackId keptTrackId = relocatedTrack.updatedTrackRef().getId();
+        if (!removedTrackId.isValid() || !keptTrackId.isValid() ||
+                removedTrackId == keptTrackId) {
+            continue;
+        }
+        // Give the row of the track that goes away to the track that stays,
+        // but never overwrite values that the track that stays already has.
+        QSqlQuery query(m_database);
+        query.prepare(QStringLiteral(
+                "UPDATE OR IGNORE %1 SET %2=:keptId WHERE %2=:removedId "
+                "AND :keptId NOT IN (SELECT %2 FROM %1)")
+                              .arg(kTrackMetaTable, kTrackMetaTrackId));
+        query.bindValue(QStringLiteral(":keptId"), keptTrackId.toVariant());
+        query.bindValue(QStringLiteral(":removedId"), removedTrackId.toVariant());
+        if (!query.exec()) {
+            LOG_FAILED_QUERY(query);
+            continue;
+        }
+        if (query.numRowsAffected() > 0) {
+            changedTrackIds.insert(keptTrackId);
+        }
+        // Whatever is left belongs to an id that the merge removed.
+        query.prepare(QStringLiteral("DELETE FROM %1 WHERE %2=:removedId")
+                              .arg(kTrackMetaTable, kTrackMetaTrackId));
+        query.bindValue(QStringLiteral(":removedId"), removedTrackId.toVariant());
+        if (!query.exec()) {
+            LOG_FAILED_QUERY(query);
+        }
     }
-    QSet<TrackId> trackIds;
-    while (query.next()) {
-        trackIds.insert(TrackId(query.value(0)));
-        m_lastUpdatedAt = math_max(m_lastUpdatedAt, query.value(1).toLongLong());
-    }
-    if (!trackIds.isEmpty()) {
-        emit tracksChanged(trackIds);
+    if (!changedTrackIds.isEmpty()) {
+        emit tracksChanged(changedTrackIds);
     }
 }
 
