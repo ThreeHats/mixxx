@@ -32,8 +32,14 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
         SuggestedForDecks,
     };
 
+    /// The settings namespace of the sidebar node. The panel has one of its
+    /// own, thus the two tables keep their own column layout.
+    static const char* kSidebarSettingsNamespace;
+    static const char* kPanelSettingsNamespace;
+
     RelatedTracksTableModel(QObject* pParent,
-            TrackCollectionManager* pTrackCollectionManager);
+            TrackCollectionManager* pTrackCollectionManager,
+            const char* settingsNamespace = kSidebarSettingsNamespace);
     ~RelatedTracksTableModel() final = default;
 
     void selectAllRelated();
@@ -102,6 +108,8 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
 
   private:
     void setRelationTable(const QString& tableName, const QString& viewQuery);
+    /// True for a column that this model adds to the library columns.
+    bool isExtraColumn(int column) const;
     void storeSearchText();
     TrackRelationStorage& storage() const;
     bool writeRelationColumn(const QModelIndex& index, const QVariant& value);

@@ -52,8 +52,11 @@ RelatedTracksPanel::RelatedTracksPanel(QWidget* pParent,
         : QWidget(pParent),
           m_pConfig(pConfig),
           m_pLibrary(pLibrary),
-          m_model(this, pLibrary->trackCollectionManager()),
-          m_modelIsLoaded(false) {
+          m_model(this,
+                  pLibrary->trackCollectionManager(),
+                  RelatedTracksTableModel::kPanelSettingsNamespace),
+          m_modelIsLoaded(false),
+          m_splitHeightPending(false) {
     setObjectName(QStringLiteral("RelatedTracksPanel"));
 
     auto* pPanelLayout = new QVBoxLayout(this);
@@ -184,6 +187,14 @@ void RelatedTracksPanel::showEvent(QShowEvent* pEvent) {
     m_pDeckWatcher->setActive(true);
 }
 
+void RelatedTracksPanel::resizeEvent(QResizeEvent* pEvent) {
+    QWidget::resizeEvent(pEvent);
+    if (m_splitHeightPending) {
+        // The skin gave the splitter no size at the first show.
+        restoreSplitHeight();
+    }
+}
+
 void RelatedTracksPanel::hideEvent(QHideEvent* pEvent) {
     QWidget::hideEvent(pEvent);
     m_pDeckWatcher->setActive(false);
@@ -240,9 +251,12 @@ void RelatedTracksPanel::restoreSplitHeight() {
     }
     const int total = sizes.at(0) + sizes.at(1);
     if (total <= 0) {
-        // The skin has not given the splitter a size yet.
+        // The skin has not given the splitter a size yet. The next resize
+        // of the panel gives it one.
+        m_splitHeightPending = true;
         return;
     }
+    m_splitHeightPending = false;
     // The panel takes at most half of the library area.
     const int height = std::min(
             m_pConfig->getValue(kPanelHeightConfigKey, kDefaultPanelHeight),

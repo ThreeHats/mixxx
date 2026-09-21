@@ -49,6 +49,7 @@ class RelatedTracksPanel : public QWidget {
   protected:
     void showEvent(QShowEvent* pEvent) override;
     void hideEvent(QHideEvent* pEvent) override;
+    void resizeEvent(QResizeEvent* pEvent) override;
 
   private slots:
     void slotShowControlChanged(double value);
@@ -74,6 +75,8 @@ class RelatedTracksPanel : public QWidget {
     QPointer<QSplitter> m_pSplitter;
     /// True while the table view holds the model of the panel.
     bool m_modelIsLoaded;
+    /// True while the panel waits for a splitter that has a size.
+    bool m_splitHeightPending;
 };
 
 } // namespace muxic

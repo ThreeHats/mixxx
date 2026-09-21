@@ -157,13 +157,21 @@ QString formatDeckColumns(int deckNumber) {
 
 } // anonymous namespace
 
+// static
+const char* RelatedTracksTableModel::kSidebarSettingsNamespace =
+        "mixxx.db.model.relatedtracks";
+// static
+const char* RelatedTracksTableModel::kPanelSettingsNamespace =
+        "mixxx.db.model.relatedtrackspanel";
+
 RelatedTracksTableModel::RelatedTracksTableModel(
         QObject* pParent,
-        TrackCollectionManager* pTrackCollectionManager)
+        TrackCollectionManager* pTrackCollectionManager,
+        const char* settingsNamespace)
         : TrackSetTableModel(
                   pParent,
                   pTrackCollectionManager,
-                  "mixxx.db.model.relatedtracks") {
+                  settingsNamespace) {
 }
 
 void RelatedTracksTableModel::storeSearchText() {
@@ -555,15 +563,37 @@ bool RelatedTracksTableModel::relationForIndex(
     return storage().readRelation(m_referenceTrackId, trackId, pRelation);
 }
 
+bool RelatedTracksTableModel::isExtraColumn(int column) const {
+    if (column < 0) {
+        return false;
+    }
+    if (column == fieldIndex(kDeckNumberColumn)) {
+        return true;
+    }
+    for (const QString& columnName : kRelationColumns) {
+        if (column == fieldIndex(columnName)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 QVariant RelatedTracksTableModel::data(const QModelIndex& index, int role) const {
-    if (index.isValid() &&
-            index.column() == fieldIndex(kRelationRatingColumn) &&
-            (role == Qt::DisplayRole || role == Qt::EditRole)) {
-        const QVariant value = rawValue(index);
-        if (value.isNull()) {
+    if (index.isValid()) {
+        const int column = index.column();
+        if (role == Qt::CheckStateRole && isExtraColumn(column)) {
+            // The ColumnCache knows no column of this model, thus the base
+            // class gives the value of the cell as a check state.
             return QVariant();
         }
-        return QVariant::fromValue(StarRating(value.toInt()));
+        if (column == fieldIndex(kRelationRatingColumn) &&
+                (role == Qt::DisplayRole || role == Qt::EditRole)) {
+            const QVariant value = rawValue(index);
+            if (value.isNull()) {
+                return QVariant();
+            }
+            return QVariant::fromValue(StarRating(value.toInt()));
+        }
     }
     return TrackSetTableModel::data(index, role);
 }
