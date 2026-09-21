@@ -9,9 +9,15 @@
 
 class QPaintEvent;
 
+namespace {
+// A track with a bar phase draws the beat lines weaker than the bar lines.
+constexpr float kBeatAlphaFactor = 0.6f;
+} // namespace
+
 WaveformRenderBeat::WaveformRenderBeat(WaveformWidgetRenderer* waveformWidgetRenderer)
         : WaveformRendererAbstract(waveformWidgetRenderer) {
     m_beats.resize(128);
+    m_downbeats.resize(32);
 }
 
 WaveformRenderBeat::~WaveformRenderBeat() {
@@ -78,35 +84,58 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
 
     painter->setRenderHint(QPainter::Antialiasing);
 
-    QPen beatPen(m_beatColor);
-    beatPen.setWidthF(std::max(1.0, scaleFactor()));
-    painter->setPen(beatPen);
-
     const Qt::Orientation orientation = m_waveformRenderer->getOrientation();
     const float rendererWidth = m_waveformRenderer->getWidth();
     const float rendererHeight = m_waveformRenderer->getHeight();
 
-    int beatCount = 0;
+    // The grid index of the first drawn beat. Stepping it with the iterator
+    // costs less than a lookup for each beat of a grid with tempo markers.
+    const std::optional<mixxx::BarPhase>& barPhase = trackBeats->barPhase();
+    int beatIndex = barPhase ? trackBeats->beatIndex(it) : 0;
 
-    for (; it != trackBeats->cend() && *it <= endPosition; ++it) {
+    int beatCount = 0;
+    int downbeatCount = 0;
+
+    for (; it != trackBeats->cend() && *it <= endPosition; ++it, ++beatIndex) {
         double beatPosition = it->toEngineSamplePos();
         double xBeatPoint =
                 m_waveformRenderer->transformSamplePositionInRendererWorld(beatPosition);
 
         xBeatPoint = qRound(xBeatPoint * devicePixelRatio) / devicePixelRatio;
 
+        const bool isDownbeat = barPhase && barPhase->isDownbeat(beatIndex);
+        QVector<QLineF>& lines = isDownbeat ? m_downbeats : m_beats;
+        int& count = isDownbeat ? downbeatCount : beatCount;
+
         // If we don't have enough space, double the size.
-        if (beatCount >= m_beats.size()) {
-            m_beats.resize(m_beats.size() * 2);
+        if (count >= lines.size()) {
+            lines.resize(lines.size() * 2);
         }
 
         if (orientation == Qt::Horizontal) {
-            m_beats[beatCount++].setLine(xBeatPoint, 0.0f, xBeatPoint, rendererHeight);
+            lines[count++].setLine(xBeatPoint, 0.0f, xBeatPoint, rendererHeight);
         } else {
-            m_beats[beatCount++].setLine(0.0f, xBeatPoint, rendererWidth, xBeatPoint);
+            lines[count++].setLine(0.0f, xBeatPoint, rendererWidth, xBeatPoint);
         }
     }
 
+    QColor beatColor = m_beatColor;
+    if (barPhase) {
+        // A track with a bar phase draws the beat lines weaker than the bar
+        // lines. Without a bar phase the lines keep the alpha of the skin.
+        beatColor.setAlphaF(m_beatColor.alphaF() * kBeatAlphaFactor);
+    }
+
+    QPen beatPen(beatColor);
+    beatPen.setWidthF(std::max(1.0, scaleFactor()));
+    painter->setPen(beatPen);
     // Make sure to use constData to prevent detaches!
     painter->drawLines(m_beats.constData(), beatCount);
+
+    if (downbeatCount > 0) {
+        QPen downbeatPen(m_beatColor);
+        downbeatPen.setWidthF(std::max(1.0, scaleFactor()));
+        painter->setPen(downbeatPen);
+        painter->drawLines(m_downbeats.constData(), downbeatCount);
+    }
 }

@@ -18,6 +18,7 @@
 #define BPM_REANALYZE_IMPORTED "ReanalyzeImported"
 #define BPM_FAST_ANALYSIS_ENABLED "FastAnalysisEnabled"
 #define BPM_STEM_STRATEGY "stem_strategy"
+#define BPM_DOWNBEAT_DETECTION_ENABLED "DownbeatDetectionEnabled"
 
 class BeatDetectionSettings {
   public:
@@ -54,6 +55,12 @@ class BeatDetectionSettings {
 
     DEFINE_PREFERENCE_HELPERS(FastAnalysis, bool,
                               BPM_CONFIG_KEY, BPM_FAST_ANALYSIS_ENABLED, false);
+
+    DEFINE_PREFERENCE_HELPERS(DownbeatDetectionEnabled,
+            bool,
+            BPM_CONFIG_KEY,
+            BPM_DOWNBEAT_DETECTION_ENABLED,
+            true);
 
     QString getBeatPluginId() const {
         return m_pConfig->getValue<QString>(ConfigKey(
