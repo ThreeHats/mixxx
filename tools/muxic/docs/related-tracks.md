@@ -88,6 +88,35 @@ SELECT source_track_id FROM muxic_track_relations
 The table has no trigger and no foreign-key action. The hub must delete the
 relations of a track that it removes from `library`.
 
+### When the dedupe tool merges two library rows
+
+The dedupe tool of the hub keeps one `library` row (the winner) and removes
+the other (the loser). The relations of the loser must move to the winner.
+Run these four statements in one transaction, with `:loser` and `:winner`
+bound to the two `library.id` values:
+
+```sql
+UPDATE OR IGNORE muxic_track_relations
+    SET source_track_id = :winner WHERE source_track_id = :loser;
+UPDATE OR IGNORE muxic_track_relations
+    SET target_track_id = :winner WHERE target_track_id = :loser;
+DELETE FROM muxic_track_relations
+    WHERE source_track_id = :loser OR target_track_id = :loser;
+DELETE FROM muxic_track_relations
+    WHERE source_track_id = target_track_id;
+```
+
+1. The two `UPDATE OR IGNORE` statements move each end to the winner. A row
+   that would break the unique pair stays on the loser.
+2. The third statement deletes the rows that step 1 left on the loser. The
+   row of the winner is the one that stays, with its type, its rating and
+   its note.
+3. The fourth statement deletes a relation of the winner with itself, which
+   step 1 makes when the loser and the winner were related to each other.
+
+The test `TrackRelationMergeTest` in `src/test/trackrelationstorage_test.cpp`
+runs these statements against the table, thus this page cannot go stale.
+
 ## The sidebar node
 
 The node "Related Tracks" is next to Crates. It has two groups:
@@ -116,6 +145,25 @@ Every node of this feature has the normal library columns and five more:
 arrow: → for one way, ↔ for both ways. The first four columns are empty in
 a node that shows no single relation per row. The column set is the same in
 each node, thus the table keeps the column layout when the node changes.
+
+"Relation Rating" and "Relations" sort by their number, not by their text.
+
+### Edit a relation
+
+In a node under "Related", three cells are editable:
+
+- **Relation**: a combo box with the types of the table and the types
+  `mix`, `harmonic_blend`, `energy_transition`, `mashup` and `double_drop`.
+  The box also takes a new type that you type in.
+- **Relation Rating**: the star editor of the library rating column, 0 to 5
+  stars.
+- **Relation Note**: free text.
+
+The cells are read-only in the root node and under "Suggestions", because a
+row there carries no single relation.
+
+To change the direction, use "Relate Both Ways" or "Relate One Way" in the
+track menu. Mixxx shows the entry that fits the rows you select.
 
 A one-way relation appears under the track at its start only. A both-ways
 relation appears under both tracks.
@@ -154,6 +202,9 @@ The track menu gets three items:
 - **Show Related Tracks**. This opens the node "Related > Selected track"
   with the clicked track as the reference. The item needs one selected
   track.
+- **Relate Both Ways** and **Relate One Way**. These set the direction of
+  the relations of the selected rows. They show only in a node under
+  "Related".
 
 The deck entries are read when the submenu opens.
 
@@ -186,6 +237,7 @@ in the `.kbd.cfg` file.
 | `src/muxic/relatedtracks/trackrelationstorage.{h,cpp}` | The DAO |
 | `src/muxic/relatedtracks/relationsuggester.{h,cpp}` | The tempo and key rules |
 | `src/muxic/relatedtracks/relatedtrackstablemodel.{h,cpp}` | The table model |
+| `src/muxic/relatedtracks/relationtypedelegate.{h,cpp}` | The combo box of the type column |
 | `src/muxic/relatedtracks/relatedtracksfeature.{h,cpp}` | The sidebar node and the control |
 | `src/test/trackrelationstorage_test.cpp` | The DAO tests |
 | `src/test/relationsuggester_test.cpp` | The tempo and key tests |
@@ -195,15 +247,17 @@ The fork code is in the namespace `muxic`.
 The upstream files that change are `src/library/trackcollection.{h,cpp}`
 (the DAO joins the database and the purge), `src/library/library.{h,cpp}`
 (the node and the signal `showRelatedTracks`), `src/widget/wtrackmenu.{h,cpp}`
-(the menu items) and `CMakeLists.txt`.
+(the menu items), `src/library/basesqltablemodel.{h,cpp}` (two hooks: the
+sort expression of a table column and a write into the cache of a row),
+`src/library/basetracktablemodel.h` (`data`, `setData` and
+`delegateForColumn` are no longer `final`), `res/mixxx.qrc` (the icon) and
+`CMakeLists.txt`.
 
 ## What is not done
 
-- The menu cannot set the type, the rating or the note of a relation. Only
-  the hub can write them. A dialog is the next step.
-- The relation columns are not sorted by a `SortColumnId`, thus a click on
-  one of their headers sorts by the raw column value.
-- The node uses the icon of Crates. It has no icon of its own.
-- The deck nodes carry a plain label. They do not show the title of the
-  track on the deck.
+- The relation columns have no `SortColumnId`, thus a controller cannot
+  select them with `[Library],sort_column`. A click on the header sorts
+  them.
+- A relation can only be made with the track menu or the control. There is
+  no way to make one from the Related view itself.
 - The Suggestions view does not read the tags or the genre.
