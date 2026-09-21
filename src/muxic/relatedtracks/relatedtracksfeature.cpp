@@ -45,7 +45,7 @@ bool deckIsPlaying(int deckNumber) {
 namespace muxic {
 
 RelatedTracksFeature::RelatedTracksFeature(Library* pLibrary, UserSettingsPointer pConfig)
-        : BaseTrackSetFeature(pLibrary, pConfig, kViewName, QStringLiteral("crates")),
+        : BaseTrackSetFeature(pLibrary, pConfig, kViewName, QStringLiteral("related")),
           m_tableModel(this, pLibrary->trackCollectionManager()),
           m_numDecks(0) {
     m_pRelateActiveDecksControl =
@@ -109,6 +109,33 @@ RelatedTracksFeature::Node RelatedTracksFeature::nodeFromVariant(const QVariant&
     return node;
 }
 
+QString RelatedTracksFeature::deckLabel(int deckNumber) const {
+    TrackPointer pTrack;
+    if (deckHasTrack(deckNumber, &pTrack)) {
+        return tr("Deck %1: %2").arg(QString::number(deckNumber), pTrack->getInfo());
+    }
+    return tr("Deck %1").arg(deckNumber);
+}
+
+void RelatedTracksFeature::updateDeckLabel(int deckNumber) {
+    if (deckNumber < 1 || deckNumber > m_numDecks) {
+        return;
+    }
+    const QString label = deckLabel(deckNumber);
+    // Row 0 of a group is the node of the selected track, thus the row of a
+    // deck is its number.
+    for (int group = 0; group < 2; ++group) {
+        const QModelIndex groupIndex = m_pSidebarModel->index(group, 0);
+        if (!groupIndex.isValid()) {
+            continue;
+        }
+        const QModelIndex deckIndex = m_pSidebarModel->index(deckNumber, 0, groupIndex);
+        if (deckIndex.isValid()) {
+            m_pSidebarModel->setData(deckIndex, label, Qt::DisplayRole);
+        }
+    }
+}
+
 void RelatedTracksFeature::rebuildChildModel() {
     std::unique_ptr<TreeItem> pRootItem = TreeItem::newRoot(this);
 
@@ -117,7 +144,7 @@ void RelatedTracksFeature::rebuildChildModel() {
     pRelatedItem->appendChild(tr("Selected track"),
             nodeToVariant(Node{NodeKind::RelatedToSelected, 0}));
     for (int deck = 1; deck <= m_numDecks; ++deck) {
-        pRelatedItem->appendChild(tr("Deck %1").arg(deck),
+        pRelatedItem->appendChild(deckLabel(deck),
                 nodeToVariant(Node{NodeKind::RelatedToDeck, deck}));
     }
 
@@ -126,7 +153,7 @@ void RelatedTracksFeature::rebuildChildModel() {
     pSuggestedItem->appendChild(tr("Selected track"),
             nodeToVariant(Node{NodeKind::SuggestedForSelected, 0}));
     for (int deck = 1; deck <= m_numDecks; ++deck) {
-        pSuggestedItem->appendChild(tr("Deck %1").arg(deck),
+        pSuggestedItem->appendChild(deckLabel(deck),
                 nodeToVariant(Node{NodeKind::SuggestedForDeck, deck}));
     }
 
@@ -233,6 +260,7 @@ void RelatedTracksFeature::slotDeckTrackChanged(const QString& group,
     if (!PlayerManager::isDeckGroup(group, &deckNumber)) {
         return;
     }
+    updateDeckLabel(deckNumber);
     refreshForTrackOfNode(Node{NodeKind::RelatedToDeck, deckNumber});
     refreshForTrackOfNode(Node{NodeKind::SuggestedForDeck, deckNumber});
 }

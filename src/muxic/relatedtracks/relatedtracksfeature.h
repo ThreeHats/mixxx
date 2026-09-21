@@ -71,6 +71,9 @@ class RelatedTracksFeature : public BaseTrackSetFeature {
     static Node nodeFromVariant(const QVariant& data);
 
     void rebuildChildModel();
+    /// The label of a deck node: the deck and the track on it.
+    QString deckLabel(int deckNumber) const;
+    void updateDeckLabel(int deckNumber);
     void showNode(const Node& node);
     /// Reads the table again when the shown node depends on the track.
     void refreshForTrackOfNode(const Node& node);
