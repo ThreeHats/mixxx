@@ -224,12 +224,14 @@ after a seek, after a loop wrap and after a load. It is 0 while the deck
 holds no track, while the track has no grid, and while the grid has no
 phase.
 
-The track menu holds **BPM and beatgrid** > **Set downbeat here**, which
-does the same as `beats_set_downbeat` on the current play position of the
-deck.
+The track menu of a deck holds **Adjust BPM** > **Set Downbeat Here**, which
+writes `beats_set_downbeat` of that deck. The item is grey in the library,
+because only a deck has a play position.
 
-No key of the default keyboard mapping is free for these controls. A
-controller mapping reaches them by the names above.
+The default keyboard mapping maps no beat grid control at all, not even
+`beats_translate_curpos`, thus these three controls get no key either. A
+controller mapping or a keyboard file of the user reaches them by the names
+above.
 
 ## The waveform
 

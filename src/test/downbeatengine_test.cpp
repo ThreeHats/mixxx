@@ -76,8 +76,7 @@ TEST_F(DownbeatEngineTest, TheValueWalksThroughTheBar) {
 TEST_F(DownbeatEngineTest, AnOffsetMovesTheFirstBeatOfTheBar) {
     loadTrack(1, true);
     ProcessBuffer();
-    // The beat with the index 1 is the downbeat, thus the beat with the
-    // index 0 is the last beat of the bar before it.
+    // The beat 1 is the downbeat, thus the beat 0 ends the bar before it.
     EXPECT_EQ(kBeatsPerBar, beatInBar());
 }
 
@@ -90,8 +89,7 @@ TEST_F(DownbeatEngineTest, AOneBeatLoopHoldsTheValue) {
 
     const int inLoop = beatInBar();
     ASSERT_NE(0, inLoop);
-    // 400 buffers of 512 frames at 44100 Hz are 4.6 seconds, thus the loop
-    // wraps about nine times.
+    // 400 buffers of 512 frames at 44100 Hz are 4.6 seconds.
     for (int i = 0; i < 400; i++) {
         ProcessBuffer();
         ASSERT_EQ(inLoop, beatInBar()) << "at the buffer " << i;
@@ -121,8 +119,8 @@ TEST_F(DownbeatEngineTest, ASeekKeepsTheValueOnTheGrid) {
     set(QStringLiteral("play"), 0.0);
     ProcessBuffer();
 
-    // The fake track holds ten beats of 120 beats per minute, thus the beat
-    // with the index `beat` sits at the tenth `beat` of the track.
+    // The fake track holds ten beats, thus the beat `beat` sits at the
+    // tenth `beat` of the track.
     for (const int beat : {5, 0, 7, 2, 9, 3}) {
         set(QStringLiteral("playposition"), beat / 10.0);
         ProcessBuffer();
@@ -132,8 +130,7 @@ TEST_F(DownbeatEngineTest, ASeekKeepsTheValueOnTheGrid) {
 }
 
 TEST_F(DownbeatEngineTest, SetDownbeatMakesTheBeatAtThePositionTheFirstOne) {
-    // The deck waits on the first beat of the track, and the bar starts one
-    // beat later, thus the first beat is the last beat of a bar.
+    // The deck waits on the first beat, and the bar starts one beat later.
     TrackPointer pTrack = loadTrack(1, true);
     ProcessBuffer();
     ASSERT_EQ(kBeatsPerBar, beatInBar());

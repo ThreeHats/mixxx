@@ -48,9 +48,8 @@ DownbeatPhase DownbeatDetector::finalize(const QVector<audio::FramePos>& beatPos
         return DownbeatPhase();
     }
 
-    // The bar tracker wants the beats in blocks, and it reads the audio up to
-    // the beat that comes after each one. A beat behind the audio that the
-    // analyzer gave would give it an empty frame, thus the list stops there.
+    // The bar tracker wants the beats in blocks, and it reads the audio up
+    // to the beat after each one. A beat behind the audio ends the list.
     std::vector<double> beats;
     beats.reserve(beatPositions.size());
     for (const audio::FramePos& position : beatPositions) {
@@ -95,9 +94,8 @@ DownbeatPhase DownbeatDetector::scorePhases(
         }
     }
 
-    // `beatSd[i]` is the change into the beat `i + 1`, thus the candidate
-    // that says "the beat `b` is a downbeat" collects the changes into the
-    // beats `b`, `b + beatsPerBar` and so on.
+    // `beatSd[i]` is the change into the beat `i + 1`. The candidate `b`
+    // collects the changes into the beats `b`, `b + beatsPerBar` and so on.
     std::vector<double> sum(beatsPerBar, 0.0);
     std::vector<int> used(beatsPerBar, 0);
     for (int i = 0; i < count; i++) {
