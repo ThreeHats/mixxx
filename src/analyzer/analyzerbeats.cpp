@@ -127,7 +127,10 @@ bool AnalyzerBeats::initialize(const AnalyzerTrack& track,
         }
     }
 
-    if (bShouldAnalyze && m_bpmSettings.getDownbeatDetectionEnabled()) {
+    // The detector needs the beat positions of the plugin. A plugin that
+    // gives only a BPM gives it nothing to work with.
+    if (bShouldAnalyze && m_pPlugin->supportsBeatTracking() &&
+            m_bpmSettings.getDownbeatDetectionEnabled()) {
         m_pDownbeatDetector = std::make_unique<mixxx::DownbeatDetector>(
                 m_sampleRate, mixxx::BarPhase::kDefaultBeatsPerBar);
     }
