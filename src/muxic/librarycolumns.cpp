@@ -41,8 +41,8 @@ QString viewSelectExpression(const QString& columnName) {
         return kTrackMetaTable + QLatin1Char('.') + columnName;
     }
     if (columnName == kColumnLufs) {
-        // The loudness is a pure function of the stored ReplayGain ratio, thus
-        // it needs no value of its own.
+        // The loudness comes from the stored ReplayGain ratio, thus the
+        // column needs no value of its own.
         return QStringLiteral(LIBRARY_TABLE) + QLatin1Char('.') +
                 LIBRARYTABLE_REPLAYGAIN + QStringLiteral(" AS ") + kColumnLufs;
     }

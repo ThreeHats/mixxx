@@ -18,9 +18,12 @@ energy and tags.
 | `muxic_tags` | Tags | text | the table below |
 | `muxic_lufs` | Loudness (LUFS) | real | computed from `library.replaygain` |
 
-All four columns are hidden by default. Right-click the table header to show
-one. All four sort. Energy and tags are editable in the table and in the track
-properties dialog. Danceability and loudness are read only.
+All four columns are hidden by default on a profile that has no saved column
+layout. On a profile that has one, the restore makes a column that the layout
+does not name visible, so that the user can find it. Right-click the table
+header to show or hide one. All four sort, and an empty cell sorts before any
+value. Energy and tags are editable in the table and in the track properties
+dialog. Danceability and loudness are read only.
 
 These views show the columns: Tracks, Hidden Tracks, Missing Tracks, a crate, a
 playlist, Auto DJ and History. They all read one cache, `library_cache_view`,
@@ -28,7 +31,8 @@ which the fork extends with a LEFT JOIN.
 
 The Computer view (a file browser) and the external library views (iTunes,
 Rekordbox, Traktor, Rhythmbox, Serato) do not show the columns. They have
-tables of their own and no row in `library`.
+tables of their own and no row in `library`. The Computer view also cannot save
+or load a common column layout.
 
 ## The table
 
@@ -53,7 +57,17 @@ CREATE INDEX IF NOT EXISTS muxic_track_meta_updated_at
   cell.
 - `updated_at` is the time of the last write, in milliseconds since the epoch
   (UTC). Mixxx polls this column, thus every writer must set it.
-- Mixxx deletes the row when the track leaves the library.
+- Mixxx deletes the row only when a purge removes the track from the library.
+  A hidden track keeps its row and the Hidden view shows the values.
+- A move of a file that makes Mixxx merge two rows gives the values to the id
+  that stays, if that id has no values.
+- SQLite does not enforce `REFERENCES library(id)`, because Mixxx does not turn
+  on `PRAGMA foreign_keys`. A purge while Mixxx is closed thus leaves a row
+  behind. Mixxx deletes those rows when the database opens.
+- The shape of the table is read one time when the database opens. A table of
+  another shape, for example one that the hub made without the primary key,
+  gives a warning in the log. Without the primary key a second row for one
+  track repeats that track in every library view.
 
 ## The tag format
 
@@ -69,15 +83,15 @@ empty tag is dropped, and a repeat is dropped. An empty list is NULL, not an
 empty string.
 
 The commas at both ends make an exact search cheap: `muxic_tags LIKE '%,vocal,%'`
-matches the tag `vocal` and not the tag `vocalist`. The `%` and `_` of a tag
-get a backslash, and the query says `ESCAPE '\'`.
+matches the tag `vocal` and not the tag `vocalist`. A `%`, a `_` or a backslash
+in a tag gets a backslash in front, and the query says `ESCAPE '\'`.
 
 ## The loudness column
 
 Mixxx already measures EBU R128 loudness. `AnalyzerEbur128` subtracts the
 measured loudness from the ReplayGain 2.0 reference of -18 LUFS and stores the
-result as a gain ratio in `library.replaygain`. The loudness is thus a pure
-function of a value that the library holds, and it needs no data of its own:
+result as a gain ratio in `library.replaygain`. The loudness thus comes from a
+value that the library holds, and it needs no data of its own:
 
 ```
 lufs = -18 - 20 * log10(replaygain_ratio)
@@ -135,15 +149,42 @@ ON CONFLICT(track_id) DO UPDATE SET
 Set `updated_at` to `int(time.time() * 1000)`. Write the tags in the stored
 form, with the two outer commas.
 
-If Mixxx is closed, it reads the new values at the next start. If Mixxx runs,
-it finds them in at most five seconds: `TrackMetaDao` polls
-`WHERE updated_at > <last seen>` every 5000 ms, and it tells the library cache
-to read the rows again. The table then repaints. This is the only path that
-brings an outside change into a running Mixxx, thus a writer that does not set
-`updated_at` stays invisible until the next start.
+Keep each transaction short. The rules below say what waits for what.
 
-An edit inside Mixxx takes the same path: the data access object writes the
-row, then reports the track id at once.
+If Mixxx is closed, it reads the new values at the next start. If Mixxx runs,
+it finds them in at most five seconds. `TrackMetaPoller` does that work:
+
+- It runs in a thread of its own with a connection of its own from the pool of
+  Mixxx, thus it never stops the user interface.
+- Every 5000 ms it reads `PRAGMA data_version`. That value only moves when
+  another connection commits, thus an idle hub costs almost nothing.
+- Then it reads `WHERE updated_at >= <last seen>` and drops the ids that the
+  last report already covered at that same millisecond. Several rows can carry
+  one millisecond, thus `>` would lose the rows that the hub commits after the
+  poll.
+- The connection of the poll has `PRAGMA busy_timeout=20`. While the hub holds
+  the write lock the poll gives up at once and tries again at the next tick.
+- It reports the ids in chunks of 500 over a queued signal, thus a full pass of
+  the hub over a large library does not freeze the table.
+
+This is the only path that brings an outside change into a running Mixxx, thus
+a writer that does not set `updated_at` stays invisible until the next start.
+A backward step of the system clock also hides a write, because the poll only
+looks forward.
+
+What waits for what:
+
+- A write of the hub waits for a write of Mixxx, and a write of Mixxx waits for
+  a write of the hub. The database file has one writer at a time, and Mixxx
+  does not use the write-ahead log.
+- A read of the poll never blocks the user interface, because it has its own
+  connection and gives up after 20 ms.
+- A read or a write of Mixxx itself, for example an edit in the table, runs on
+  the main connection and waits up to 5000 ms for the hub. A long transaction
+  of the hub thus delays an edit. Keep hub transactions short.
+
+An edit inside Mixxx does not take the poll: the data access object writes the
+row on the main connection and reports the track id at once.
 
 ## The saved column layout
 
@@ -156,7 +197,8 @@ The header context menu gets three entries, from pull request 14479 by ronso0:
 
 The common state lives in the `settings` table under
 `common_header_state_pb`. A per-view state stays in
-`<namespace>.header_state_pb`, as before. A load of the common state does not
+`<namespace>.header_state_pb`, and the Sync switch of a view in
+`<namespace>.sync_with_common_header`. A load of the common state does not
 force a new column to be visible and does not change the sort column, because
 the views do not have the same columns. The Computer view cannot take the
 common state.
