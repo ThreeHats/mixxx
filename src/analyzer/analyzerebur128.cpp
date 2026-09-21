@@ -34,10 +34,11 @@ bool AnalyzerEbur128::initialize(
     }
     DEBUG_ASSERT(m_pState == nullptr);
     m_channelCount = channelCount;
-    // libebur128 reads more than two channels as a surround signal. A stem
-    // file is four stereo parts, thus the analyzer mixes it down first.
+    // The channel map of libebur128 is right for a surround signal but not
+    // for a stem file, which is four stereo parts. A stem file thus mixes.
+    const bool isStem = channelCount == mixxx::audio::ChannelCount::stem();
     m_pState = ebur128_init(
-            std::min(channelCount, mixxx::audio::ChannelCount::stereo()),
+            isStem ? mixxx::audio::ChannelCount::stereo() : channelCount,
             sampleRate,
             EBUR128_MODE_I);
     return m_pState != nullptr;
@@ -60,7 +61,7 @@ bool AnalyzerEbur128::processSamples(const CSAMPLE* pIn, SINT count) {
 
     const CSAMPLE* pGainInput = pIn;
     CSAMPLE* pMixedChannel = nullptr;
-    if (m_channelCount > mixxx::audio::ChannelCount::stereo()) {
+    if (m_channelCount == mixxx::audio::ChannelCount::stem()) {
         pMixedChannel = SampleUtil::alloc(
                 numFrames * mixxx::audio::ChannelCount::stereo());
         VERIFY_OR_DEBUG_ASSERT(pMixedChannel) {
