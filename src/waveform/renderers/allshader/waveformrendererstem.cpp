@@ -214,14 +214,10 @@ bool WaveformRendererStem::preprocessInner() {
 
         const float fVisualIdx = static_cast<float>(visualIdx) * invDevicePixelRatio;
 
-        // The max of the left and the right channel, for the mix and for each
-        // stem.
         const mixxx::StemStripPeaks peaks = mixxx::stemStripPeaks(
                 data, visualIndexStart, visualIndexStop, stemCount);
-        // The four stems sum to the mix, thus each one alone is much smaller.
-        // This factor gives the tallest stem the height that the same music
-        // gets in a file with no stems, and keeps the size of the stems
-        // relative to each other.
+        // The four stems sum to the mix, thus each one alone is smaller.
+        // This factor lifts the loudest one to the height of the mix.
         const float stemScale = mixxx::stemOverlayScale(
                 peaks.all, peaks.loudestStem(stemCount));
 

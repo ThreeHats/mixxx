@@ -203,6 +203,41 @@ test `JobWritesTheTagsAndKeepsTheStemManifest` proves both: after the tag
 write, `StemInfoImporter` still reads four stems and the cover image reads
 back.
 
+## The size of the waveform
+
+A stem file holds four parts that sum to the mix, thus each part alone is
+much quieter than the mix. Mixxx draws a stem track with a renderer of its
+own, `WaveformRendererStem`, which reads the four stem bands of the waveform
+and lays them on top of each other. Every other signal renderer draws the
+all band, which holds the mix. A stem track thus looked much smaller than
+the same music in a file with no stems.
+
+The measurement, with four parts at 40, 30, 20 and 10 percent of the mix:
+the all band reaches 250 and the loudest stem band reaches 100, in the
+source file and in the stem file. On a waveform of 80 pixels the stem track
+drew 15.7 pixels where the normal track drew 39.2 pixels.
+
+The fork gives all parts of a strip one common factor, which lifts the
+loudest part to the height of the mix. The parts keep their size relative to
+each other, thus you still read which part is loud. The code is in
+`src/waveform/renderers/stemwaveformscale.h` and
+`src/waveform/renderers/allshader/waveformrendererstem.cpp`.
+
+- All waveform types use this one renderer for a stem track, thus RGB, RGB
+  Stacked, Filtered, HSV and Simple all get the same height.
+- The overview needs no change. It reads the all band.
+- The cause is in Mixxx and not in the conversion. The sample stem file of
+  Mixxx, `src/test/stems/sin_AAC_256kbps_VBR.stem.mp4`, has the same shape:
+  the mix stream peaks at +1.0 dB and each stem stream at -3.2 dB. The owner
+  can report the change to Mixxx.
+- The ReplayGain is not the cause. The gain analyzer sums the eight channels
+  in the same way, and the job copies the gain of the source track.
+
+**Preferences > Waveforms** has a **Display mode** for stem tracks. With
+**Stacked**, each part gets a quarter of the height, thus the waveform is
+smaller on purpose. **Overlapping**, the default, is the mode that this
+section describes.
+
 ## How the muxic rig sees it
 
 The fork adds no table and no column. The new stem file is a normal row in
