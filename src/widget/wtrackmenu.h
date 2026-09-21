@@ -31,12 +31,6 @@ class WFindOnWebMenu;
 class WSearchRelatedTracksMenu;
 class WStarRatingAction;
 
-#ifdef __STEM__
-namespace mixxx {
-class DlgStemConversion;
-} // namespace mixxx
-#endif
-
 /// A context menu for track(s).
 /// Can be used with individual track type widgets based on TrackPointer
 /// or list/table type track widgets based on QModelIndexList and TrackModel.
@@ -90,6 +84,7 @@ class WTrackMenu : public QMenu {
             WTrackMenu::Feature::Properties |
             WTrackMenu::Feature::UpdateReplayGainFromPregain |
             WTrackMenu::Feature::FindOnWeb |
+            WTrackMenu::Feature::Stems |
             WTrackMenu::Feature::SelectInLibrary};
 
     WTrackMenu(QWidget* parent,
@@ -374,7 +369,6 @@ class WTrackMenu : public QMenu {
     parented_ptr<QMenu> m_pStemsMenu;
     parented_ptr<QAction> m_pConvertToStemsAction;
     parented_ptr<QAction> m_pShowStemConversionsAction;
-    std::unique_ptr<mixxx::DlgStemConversion> m_pDlgStemConversion;
 #endif
 
     // Analysis actions

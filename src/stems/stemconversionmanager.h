@@ -10,8 +10,11 @@
 #include "track/track_decl.h"
 
 class TrackCollectionManager;
+class QWidget;
 
 namespace mixxx {
+
+class DlgStemConversion;
 
 /// The queue of the stem conversions. It runs one job at a time, because a
 /// separation model takes the memory of the graphics card.
@@ -43,6 +46,10 @@ class StemConversionManager : public QObject {
 
     QList<JobStatus> jobStatuses() const;
 
+    /// Show the one conversion window. It belongs to the top level window of
+    /// the given widget.
+    void showConversions(QWidget* pParent);
+
   signals:
     void jobsChanged();
 
@@ -52,16 +59,20 @@ class StemConversionManager : public QObject {
         QPointer<StemConversionJob> pJob;
     };
 
+    void scheduleStartNext();
     void startNext();
     void onJobFinished(int jobId);
     void addStemTrackToLibrary(JobEntry* pEntry);
     int indexOfJob(int jobId) const;
+    bool isOutputPathTaken(const QString& outputFilePath) const;
 
     const UserSettingsPointer m_pConfig;
     TrackCollectionManager* const m_pTrackCollectionManager;
 
     QList<JobEntry> m_jobs;
+    QPointer<DlgStemConversion> m_pDialog;
     int m_nextJobId;
+    bool m_startScheduled;
 };
 
 } // namespace mixxx

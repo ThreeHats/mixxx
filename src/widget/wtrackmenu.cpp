@@ -53,7 +53,6 @@
 #include "widget/wstarrating.h"
 #include "widget/wstarratingaction.h"
 #ifdef __STEM__
-#include "stems/dlgstemconversion.h"
 #include "stems/stemconversionmanager.h"
 #include "widget/wtrackstemmenu.h"
 #endif
@@ -1856,13 +1855,7 @@ void WTrackMenu::slotShowStemConversions() {
     VERIFY_OR_DEBUG_ASSERT(pManager) {
         return;
     }
-    if (!m_pDlgStemConversion) {
-        m_pDlgStemConversion =
-                std::make_unique<mixxx::DlgStemConversion>(nullptr, pManager);
-    }
-    m_pDlgStemConversion->show();
-    m_pDlgStemConversion->raise();
-    m_pDlgStemConversion->activateWindow();
+    pManager->showConversions(parentWidget());
 }
 #endif
 
@@ -3103,8 +3096,9 @@ bool WTrackMenu::featureIsEnabled(Feature flag) const {
         return m_pLibrary != nullptr;
 #ifdef __STEM__
     case Feature::Stems:
-        return m_pLibrary != nullptr &&
-                m_pTrackModel->hasCapabilities(TrackModel::Capability::EditMetadata);
+        // The conversion only reads the source file and writes a new one,
+        // thus a track of any collection can go through it.
+        return m_pLibrary != nullptr;
 #endif
     case Feature::SelectInLibrary:
         return m_pTrack != nullptr;

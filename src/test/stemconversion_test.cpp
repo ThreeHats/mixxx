@@ -13,6 +13,7 @@
 #include "sources/metadatasourcetaglib.h"
 #include "sources/soundsourceproxy.h"
 #include "stems/stemconversionjob.h"
+#include "stems/stemconversionmanager.h"
 #include "stems/stemconversionsettings.h"
 #include "stems/stemtrackcopy.h"
 #include "test/mixxxtest.h"
@@ -758,4 +759,37 @@ TEST_F(StemConversionTest, JobWritesTheTagsAndKeepsTheStemManifest) {
     EXPECT_FALSE(coverImage.isNull()) << "the cover image is missing";
 }
 
+TEST_F(StemConversionTest, ManagerRefusesTwoJobsForOneOutputFile) {
+    QTemporaryDir dir;
+    ASSERT_TRUE(dir.isValid());
+    const QDir outputDir(dir.filePath(QStringLiteral("out")));
+    ASSERT_TRUE(QDir().mkpath(outputDir.absolutePath()));
+
+    // Two sources with one base name give one output path.
+    const QDir firstDir(dir.filePath(QStringLiteral("a")));
+    const QDir secondDir(dir.filePath(QStringLiteral("b")));
+    ASSERT_TRUE(QDir().mkpath(firstDir.absolutePath()));
+    ASSERT_TRUE(QDir().mkpath(secondDir.absolutePath()));
+    TrackPointer pFirst = makeSourceTrack(
+            firstDir.absoluteFilePath(QStringLiteral("track.wav")));
+    TrackPointer pSecond = makeSourceTrack(
+            secondDir.absoluteFilePath(QStringLiteral("track.wav")));
+
+    mixxx::StemConversionSettings settings = makeSettings(
+            QStringLiteral("hang"), outputDir.absolutePath());
+    settings.writeTo(config());
+
+    mixxx::StemConversionManager manager(config(), nullptr);
+    EXPECT_EQ(2, manager.enqueue({pFirst, pSecond}));
+
+    const QList<mixxx::StemConversionManager::JobStatus> statuses =
+            manager.jobStatuses();
+    ASSERT_EQ(2, statuses.size());
+    EXPECT_QSTRING_EQ(statuses.at(0).outputFilePath, statuses.at(1).outputFilePath);
+    EXPECT_EQ(mixxx::StemConversionJob::State::Queued, statuses.at(0).state);
+    EXPECT_EQ(mixxx::StemConversionJob::State::Failed, statuses.at(1).state);
+    EXPECT_TRUE(statuses.at(1).message.contains(QStringLiteral("Another conversion")))
+            << statuses.at(1).message.toStdString();
+    manager.cancelAll();
+}
 #endif // Q_OS_WIN

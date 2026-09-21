@@ -4,6 +4,7 @@
 
 #include "library/trackcollectionmanager.h"
 #include "moc_stemconversionmanager.cpp"
+#include "stems/dlgstemconversion.h"
 #include "stems/stemtrackcopy.h"
 #include "track/track.h"
 #include "track/trackref.h"
@@ -25,7 +26,8 @@ StemConversionManager::StemConversionManager(UserSettingsPointer pConfig,
         : QObject(pParent),
           m_pConfig(std::move(pConfig)),
           m_pTrackCollectionManager(pTrackCollectionManager),
-          m_nextJobId(1) {
+          m_nextJobId(1),
+          m_startScheduled(false) {
 }
 
 StemConversionManager::~StemConversionManager() {
@@ -43,6 +45,20 @@ int StemConversionManager::enqueue(const TrackPointerList& tracks) {
         JobEntry entry;
         entry.status.id = m_nextJobId++;
         entry.status.title = pJob->sourceTitle();
+        entry.status.outputFilePath = pJob->outputFilePath();
+
+        // Two jobs that write one file would race.
+        if (isOutputPathTaken(entry.status.outputFilePath)) {
+            entry.status.state = StemConversionJob::State::Failed;
+            entry.status.message =
+                    tr("Another conversion in the list writes \"%1\".")
+                            .arg(entry.status.outputFilePath);
+            delete pJob;
+            m_jobs.append(entry);
+            added++;
+            continue;
+        }
+
         entry.pJob = pJob;
         const int jobId = entry.status.id;
         connect(pJob, &StemConversionJob::changed, this, [this, jobId] {
@@ -62,9 +78,21 @@ int StemConversionManager::enqueue(const TrackPointerList& tracks) {
     }
     if (added > 0) {
         emit jobsChanged();
-        startNext();
+        scheduleStartNext();
     }
     return added;
+}
+
+bool StemConversionManager::isOutputPathTaken(const QString& outputFilePath) const {
+    if (outputFilePath.isEmpty()) {
+        return false;
+    }
+    for (const JobEntry& entry : m_jobs) {
+        if (entry.pJob && entry.status.outputFilePath == outputFilePath) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void StemConversionManager::cancel(int jobId) {
@@ -107,18 +135,33 @@ QList<StemConversionManager::JobStatus> StemConversionManager::jobStatuses() con
     return statuses;
 }
 
+void StemConversionManager::scheduleStartNext() {
+    if (m_startScheduled) {
+        return;
+    }
+    // The event loop breaks the chain of a list of jobs that all fail at
+    // once, thus no call frame nests per job.
+    m_startScheduled = true;
+    QMetaObject::invokeMethod(this, &StemConversionManager::startNext, Qt::QueuedConnection);
+}
+
 void StemConversionManager::startNext() {
+    m_startScheduled = false;
+    StemConversionJob* pNext = nullptr;
     for (const JobEntry& entry : std::as_const(m_jobs)) {
-        if (entry.pJob && entry.pJob->state() != StemConversionJob::State::Queued) {
+        if (!entry.pJob) {
+            continue;
+        }
+        if (entry.pJob->state() != StemConversionJob::State::Queued) {
             // One job at a time.
             return;
         }
-    }
-    for (const JobEntry& entry : std::as_const(m_jobs)) {
-        if (entry.pJob && entry.pJob->state() == StemConversionJob::State::Queued) {
-            entry.pJob->start();
-            return;
+        if (!pNext) {
+            pNext = entry.pJob;
         }
+    }
+    if (pNext) {
+        pNext->start();
     }
 }
 
@@ -140,7 +183,7 @@ void StemConversionManager::onJobFinished(int jobId) {
     entry.pJob->deleteLater();
     entry.pJob.clear();
     emit jobsChanged();
-    startNext();
+    scheduleStartNext();
 }
 
 void StemConversionManager::addStemTrackToLibrary(JobEntry* pEntry) {
@@ -173,6 +216,16 @@ void StemConversionManager::addStemTrackToLibrary(JobEntry* pEntry) {
         kLogger.info() << "Stem file sample rate" << stemSampleRate
                        << "differs from the source rate" << sourceSampleRate;
     }
+}
+
+void StemConversionManager::showConversions(QWidget* pParent) {
+    QWidget* pTopLevel = pParent ? pParent->window() : nullptr;
+    if (!m_pDialog) {
+        m_pDialog = new DlgStemConversion(pTopLevel, this);
+    }
+    m_pDialog->show();
+    m_pDialog->raise();
+    m_pDialog->activateWindow();
 }
 
 int StemConversionManager::indexOfJob(int jobId) const {
