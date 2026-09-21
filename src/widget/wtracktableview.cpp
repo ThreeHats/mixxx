@@ -294,7 +294,7 @@ void WTrackTableView::loadTrackModel(QAbstractItemModel* pNewModel, bool restore
         // contain a potential large number of NULL values.  This will hide the
         // key column by default unless the user brings it to front
         if (pNewTrackModel->isColumnHiddenByDefault(i) &&
-                !pHeader->hasPersistedHeaderState()) {
+                !pHeader->hasRestoredHeaderState()) {
             //qDebug() << "Hiding column" << i;
             horizontalHeader()->hideSection(i);
         }

@@ -14,6 +14,9 @@
 /// which display track lists.
 class TrackModel {
   public:
+    /// The key of the column layout that every track model can share.
+    static constexpr const char* kCommonHeaderStateKey = "common_header_state_pb";
+
     static constexpr int kHeaderWidthRole = Qt::UserRole + 0;
     static constexpr int kHeaderNameRole = Qt::UserRole + 1;
     // This role is used for data export like in CSV files
@@ -220,13 +223,14 @@ class TrackModel {
         return settings.setValue(key, value);
     }
 
-    QString getCommonHeaderState() {
+    virtual QString getCommonHeaderState() {
         SettingsDAO settings(m_db);
-        return settings.getValue("common_header_state_pb");
+        return settings.getValue(kCommonHeaderStateKey);
     }
-    bool setCommonHeaderState(const QVariant& value) {
+
+    virtual bool setCommonHeaderState(const QVariant& value) {
         SettingsDAO settings(m_db);
-        return settings.setValue("common_header_state_pb", value);
+        return settings.setValue(kCommonHeaderStateKey, value);
     }
 
     virtual int defaultSortColumn() const {

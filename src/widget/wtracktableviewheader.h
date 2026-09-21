@@ -67,8 +67,11 @@ class WTrackTableViewHeader : public QHeaderView {
 
     void saveHeaderState();
 
-    // Returns false if the header state is not stored in the database (on first time usage)
-    bool hasPersistedHeaderState();
+    /// False when this view starts with no saved column layout, for example on
+    /// first use or after the header states were cleared.
+    bool hasRestoredHeaderState() const {
+        return m_headerStateRestored;
+    }
 
     int getWidthOfHiddenColumn(int column) const;
 
@@ -111,10 +114,12 @@ class WTrackTableViewHeader : public QHeaderView {
 
     void setHeightForFont();
 
+    bool m_headerStateRestored;
+
     parented_ptr<QMenu> m_pMenu;
     QMap<int, QCheckBox*> m_columnCheckBoxes;
 
-    parented_ptr<QAction> m_pStoreAsCommontHeaderAction;
+    parented_ptr<QAction> m_pStoreAsCommonHeaderAction;
     parented_ptr<QAction> m_pLoadCommonHeaderAction;
     parented_ptr<WMenuCheckBox> m_pSyncCheckBox;
     parented_ptr<QWidgetAction> m_pSyncAction;

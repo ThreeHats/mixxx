@@ -231,6 +231,27 @@ bool ProxyTrackModel::setModelSetting(const QString& name, const QVariant& value
     return m_pTrackModel->setModelSetting(name, value);
 }
 
+QString ProxyTrackModel::getCommonHeaderState() {
+    if (m_pTrackModel == nullptr) {
+        return QString();
+    }
+    return m_pTrackModel->getCommonHeaderState();
+}
+
+bool ProxyTrackModel::setCommonHeaderState(const QVariant& value) {
+    if (m_pTrackModel == nullptr) {
+        return false;
+    }
+    return m_pTrackModel->setCommonHeaderState(value);
+}
+
+bool ProxyTrackModel::canLoadTrackSetColumns() const {
+    if (m_pTrackModel == nullptr) {
+        return false;
+    }
+    return m_pTrackModel->canLoadTrackSetColumns();
+}
+
 void ProxyTrackModel::sort(int column, Qt::SortOrder order) {
     if (m_pTrackModel && m_pTrackModel->isColumnSortable(column)) {
         QSortFilterProxyModel::sort(column, order);
