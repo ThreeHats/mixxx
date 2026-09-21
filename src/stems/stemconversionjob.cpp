@@ -128,6 +128,7 @@ StemConversionJob::StemConversionJob(const StemConversionSettings& settings,
                           ? QString()
                           : settings.outputFilePathFor(m_sourceFilePath)),
           m_pProcess(make_parented<QProcess>(this)),
+          m_madeOutputFile(false),
           m_encodeCount(0),
           m_state(State::Queued),
           m_progress(0.0),
@@ -305,6 +306,11 @@ void StemConversionJob::onAsyncStepFinished() {
     const QString errorMessage = m_watcher.result();
     if (m_cancelRequested) {
         cleanUp();
+        if (m_madeOutputFile) {
+            // The move went through just before the request came in.
+            QFile::remove(m_outputFilePath);
+            m_madeOutputFile = false;
+        }
         setState(State::Cancelled);
         emit finished();
         return;
@@ -471,6 +477,7 @@ QString StemConversionJob::moveIntoPlace() {
         return tr("The stem file cannot be moved to \"%1\".").arg(m_outputFilePath);
     }
     m_partFilePath.clear();
+    m_madeOutputFile = true;
     return QString();
 }
 

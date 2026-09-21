@@ -123,6 +123,8 @@ class StemConversionJob : public QObject {
     /// The file in the output directory that the job owns. Only this file
     /// and the work directory go away on a failure.
     QString m_partFilePath;
+    /// True after the job put its own stem file in the output directory.
+    bool m_madeOutputFile;
 
     QStringList m_muxInputs;
     QStringList m_encodeQueue;
