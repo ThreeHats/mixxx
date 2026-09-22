@@ -301,10 +301,9 @@ void AnalyzerBeats::storeResults(TrackPointer pTrack) {
 
     if (pBeats && m_pDownbeatDetector && !beats.isEmpty()) {
         const mixxx::DownbeatPhase phase = m_pDownbeatDetector->finalize(beats);
-        qDebug() << "AnalyzerBeats downbeat detection: phase" << phase.phase
-                 << "confidence" << phase.confidence;
-        if (phase.confidence >= mixxx::DownbeatDetector::kMinConfidence &&
-                phase.phase < beats.size()) {
+        qDebug() << "AnalyzerBeats downbeat detection: accepted" << phase.accepted
+                 << "phase" << phase.phase << "confidence" << phase.confidence;
+        if (phase.accepted && phase.phase < beats.size()) {
             const auto pWithBarPhase = pBeats->trySetDownbeatNear(beats.at(phase.phase));
             if (pWithBarPhase) {
                 pBeats = *pWithBarPhase;

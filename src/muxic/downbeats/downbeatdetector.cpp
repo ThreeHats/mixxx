@@ -53,11 +53,14 @@ DownbeatPhase DownbeatDetector::finalize(const QVector<audio::FramePos>& beatPos
     std::vector<double> beats;
     beats.reserve(beatPositions.size());
     for (const audio::FramePos& position : beatPositions) {
+        // A beat that the list cannot hold would move the later indices, and
+        // the caller reads the phase as an index into its own list.
         if (!position.isValid() || position < audio::kStartFramePos) {
-            continue;
+            return DownbeatPhase();
         }
         const double block = position.value() / kBlockFrames;
         if (block >= m_blocksPushed) {
+            // The tail behind the audio drops off, thus the indices stand.
             break;
         }
         beats.push_back(block);
@@ -116,8 +119,7 @@ DownbeatPhase DownbeatDetector::scorePhases(
         }
     }
 
-    // Each bar votes for the transition that changed the audio most. The part
-    // of the bars that voted for the winner tells how sure the detector is.
+    // Each bar votes for the transition that changed the audio most.
     int bars = 0;
     int votes = 0;
     for (int start = 0; start + beatsPerBar <= count; start += beatsPerBar) {
@@ -136,9 +138,17 @@ DownbeatPhase DownbeatDetector::scorePhases(
         return DownbeatPhase();
     }
 
+    // Under no bar structure each bar votes for the winner with the chance
+    // 1 / beatsPerBar, thus the votes follow a binomial law. A vote share
+    // alone says nothing, because a short track reaches a large share by
+    // chance. The phase counts as found only when the votes stand
+    // `kSigmaFactor` standard deviations over the mean of that law.
     const double chance = 1.0 / beatsPerBar;
+    const double mean = bars * chance;
+    const double deviation = std::sqrt(bars * chance * (1.0 - chance));
     const double part = static_cast<double>(votes) / bars;
     result.confidence = std::clamp((part - chance) / (1.0 - chance), 0.0, 1.0);
+    result.accepted = votes >= mean + kSigmaFactor * deviation;
     return result;
 }
 

@@ -15,11 +15,15 @@ namespace mixxx {
 /// The bar phase that the detector found in one track.
 struct DownbeatPhase {
     /// The place of the first downbeat in the beat list, from 0 to the beats
-    /// of a bar minus one.
+    /// of a bar minus one. It means nothing while `accepted` is false.
     int phase = 0;
-    /// How sure the detector is, from 0 to 1. 0 means that every phase is
-    /// equal, which is what a signal with no bar structure gives.
+    /// The part of the bars that voted for `phase`, from 0 to 1, after the
+    /// quarter that chance gives. It is a report for the log and for a test,
+    /// not the rule that takes the phase.
     double confidence = 0.0;
+    /// True when the vote passed the significance test. Only then does the
+    /// track take the phase.
+    bool accepted = false;
 };
 
 /// Finds which beat of a track is the first beat of a bar.
@@ -30,10 +34,13 @@ struct DownbeatPhase {
 /// EUSIPCO 2006. See `tools/muxic/docs/downbeats.md`.
 class DownbeatDetector {
   public:
-    /// A track with fewer beats than this gives no phase.
-    static constexpr int kMinBeats = 16;
-    /// Below this confidence the detector reports no phase.
-    static constexpr double kMinConfidence = 0.10;
+    /// A track with fewer beats than this gives no phase. 64 beats are 16
+    /// bars, which the significance test needs to say anything.
+    static constexpr int kMinBeats = 64;
+    /// The votes must stand this many standard deviations over the quarter
+    /// that chance gives. A flat signal then passes about once in a hundred
+    /// tracks, at each track length.
+    static constexpr double kSigmaFactor = 3.0;
 
     DownbeatDetector(audio::SampleRate sampleRate, int beatsPerBar);
     ~DownbeatDetector();
@@ -48,7 +55,11 @@ class DownbeatDetector {
 
     /// Score the phase candidates of a list of beat to beat differences.
     /// `beatSd[i]` is the change of the audio between the beat `i` and the
-    /// beat `i + 1`.
+    /// beat `i + 1`. Each bar votes for the transition that changed the audio
+    /// most. Under no bar structure the votes for one phase follow a binomial
+    /// law with the chance 1 / beatsPerBar, thus the result counts as found
+    /// only when the votes stand `kSigmaFactor` standard deviations over that
+    /// chance.
     static DownbeatPhase scorePhases(const std::vector<double>& beatSd, int beatsPerBar);
 
   private:

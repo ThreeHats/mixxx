@@ -5,6 +5,7 @@
 #include <QVector>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include "audio/types.h"
@@ -16,7 +17,7 @@ namespace {
 
 constexpr auto kSampleRate = audio::SampleRate(48000);
 constexpr int kBeatsPerBar = 4;
-constexpr int kBars = 14;
+constexpr int kBars = 20;
 
 /// The bass note of each bar, in hertz. A bar line changes the note, thus the
 /// spectrum of the beat after it differs from the spectrum before it.
@@ -82,40 +83,93 @@ DownbeatPhase detect(const TestTrack& track) {
     return detector.finalize(track.beats);
 }
 
+/// The generator of the flat test signals. It is a linear congruential
+/// generator with the constants of Numerical Recipes, thus every run of the
+/// test sees the same numbers.
+class Lcg {
+  public:
+    explicit Lcg(std::uint32_t seed)
+            : m_state(seed) {
+    }
+
+    /// The next value, from 0 to 1.
+    double next() {
+        m_state = m_state * 1664525u + 1013904223u;
+        return (m_state >> 8) / static_cast<double>(1 << 24);
+    }
+
+  private:
+    std::uint32_t m_state;
+};
+
 TEST(DownbeatDetectorTest, TheScoreTakesThePhaseWithTheLargestChange) {
     // The change into every fourth beat is large, thus the first downbeat is
     // the beat with the index 2.
     std::vector<double> beatSd;
-    for (int i = 0; i < 40; i++) {
+    for (int i = 0; i < 80; i++) {
         beatSd.push_back((i + 1) % 4 == 2 ? 1.0 : 0.1);
     }
     const DownbeatPhase phase = DownbeatDetector::scorePhases(beatSd, 4);
+    EXPECT_TRUE(phase.accepted);
     EXPECT_EQ(2, phase.phase);
     EXPECT_DOUBLE_EQ(1.0, phase.confidence);
 }
 
-TEST(DownbeatDetectorTest, AFlatScoreGivesNoConfidence) {
+TEST(DownbeatDetectorTest, AFlatScoreTakesNoPhase) {
     // Every fourth transition is large, but they fall on no single phase.
-    const std::vector<double> beatSd{
-            1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1};
+    const std::vector<double> beatSd{1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1,
+            0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1,
+            0.1, 1.0, 0.1};
     const DownbeatPhase phase = DownbeatDetector::scorePhases(beatSd, 4);
-    EXPECT_LT(phase.confidence, 0.5);
+    EXPECT_FALSE(phase.accepted);
 }
 
-TEST(DownbeatDetectorTest, AShortListGivesNoPhase) {
+TEST(DownbeatDetectorTest, AFlatSignalTakesNoPhaseAtAnyLength) {
+    // A vote share alone rises with chance on a short track. The significance
+    // test must hold the false accepts down at every length.
+    for (const int beats : {64, 256, 1024}) {
+        Lcg random(12345);
+        constexpr int kDraws = 200;
+        int accepted = 0;
+        for (int draw = 0; draw < kDraws; draw++) {
+            std::vector<double> beatSd;
+            beatSd.reserve(beats - 1);
+            for (int i = 0; i < beats - 1; i++) {
+                beatSd.push_back(random.next());
+            }
+            if (DownbeatDetector::scorePhases(beatSd, 4).accepted) {
+                accepted++;
+            }
+        }
+        EXPECT_LE(accepted * 20, kDraws)
+                << "took " << accepted << " of " << kDraws
+                << " flat signals of " << beats << " beats";
+    }
+}
+
+TEST(DownbeatDetectorTest, AShortListTakesNoPhase) {
     const std::vector<double> beatSd{1.0, 0.1, 0.1, 0.1};
     const DownbeatPhase phase = DownbeatDetector::scorePhases(beatSd, 4);
+    EXPECT_FALSE(phase.accepted);
     EXPECT_DOUBLE_EQ(0.0, phase.confidence);
 }
 
-TEST(DownbeatDetectorTest, AShortTrackGivesNoPhase) {
+TEST(DownbeatDetectorTest, AShortTrackTakesNoPhase) {
     DownbeatDetector detector(kSampleRate, kBeatsPerBar);
     QVector<audio::FramePos> beats;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < DownbeatDetector::kMinBeats - 1; i++) {
         beats.append(audio::FramePos(i * 24000));
     }
     const DownbeatPhase phase = detector.finalize(beats);
-    EXPECT_DOUBLE_EQ(0.0, phase.confidence);
+    EXPECT_FALSE(phase.accepted);
+}
+
+TEST(DownbeatDetectorTest, AnInvalidBeatPositionTakesNoPhase) {
+    const TestTrack track = makeClickTrack(128.0, 0, true);
+    TestTrack broken = track;
+    broken.beats[7] = audio::kInvalidFramePos;
+    EXPECT_TRUE(detect(track).accepted);
+    EXPECT_FALSE(detect(broken).accepted);
 }
 
 class DownbeatPickupTest : public testing::TestWithParam<int> {};
@@ -125,10 +179,10 @@ TEST_P(DownbeatPickupTest, TheDetectorFindsThePhaseAfterAPickup) {
     for (const double bpm : {120.0, 128.0, 140.0, 174.0}) {
         const TestTrack track = makeClickTrack(bpm, pickupBeats, true);
         const DownbeatPhase phase = detect(track);
-        EXPECT_EQ(pickupBeats, phase.phase)
+        EXPECT_TRUE(phase.accepted)
                 << "at " << bpm << " beats per minute with " << pickupBeats
                 << " pickup beats";
-        EXPECT_GE(phase.confidence, DownbeatDetector::kMinConfidence)
+        EXPECT_EQ(pickupBeats, phase.phase)
                 << "at " << bpm << " beats per minute with " << pickupBeats
                 << " pickup beats";
     }
@@ -136,10 +190,10 @@ TEST_P(DownbeatPickupTest, TheDetectorFindsThePhaseAfterAPickup) {
 
 INSTANTIATE_TEST_SUITE_P(AllPickups, DownbeatPickupTest, testing::Values(0, 1, 2, 3));
 
-TEST(DownbeatDetectorTest, ATrackWithNoBarStructureGivesALowConfidence) {
+TEST(DownbeatDetectorTest, ATrackWithNoBarStructureTakesNoPhase) {
     const TestTrack track = makeClickTrack(128.0, 0, false);
     const DownbeatPhase phase = detect(track);
-    EXPECT_LT(phase.confidence, DownbeatDetector::kMinConfidence);
+    EXPECT_FALSE(phase.accepted);
 }
 
 } // namespace
