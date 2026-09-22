@@ -70,7 +70,6 @@ class allshader::WaveformRendererStem final
 
     QVarLengthArray<int, mixxx::kMaxSupportedStems> m_stackOrder;
 
-    mixxx::StemTrackScale m_stemTrackScale;
 
     bool preprocessInner();
 

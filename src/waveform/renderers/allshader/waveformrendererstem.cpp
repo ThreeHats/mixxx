@@ -179,14 +179,6 @@ bool WaveformRendererStem::preprocessInner() {
 
     const int stemCount = static_cast<int>(std::min<qsizetype>(
             stemInfo.size(), mixxx::kMaxSupportedStems));
-    // The four stems sum to the mix, thus one alone is much smaller. One
-    // factor lifts the loudest stem. A lane of the split mode gets none.
-    const float stemScale = m_splitStemTracks
-            ? 1.0f
-            : m_stemTrackScale.scale(data,
-                      dataSize,
-                      waveform->getCompletion(),
-                      stemCount);
 
     // Effective visual frame for x
     double xVisualFrame = qRound(firstVisualFrame / visualIncrementPerPixel) *
@@ -222,6 +214,11 @@ bool WaveformRendererStem::preprocessInner() {
 
         const mixxx::StemStripPeaks peaks = mixxx::stemStripPeaks(
                 data, visualIndexStart, visualIndexStop, stemCount);
+        // The stems sum to the mix, thus the loudest one alone is smaller
+        // than the mix. The strip lifts it to the mix. A lane gets no lift.
+        const float stemScale = m_splitStemTracks
+                ? 1.0f
+                : mixxx::stemOverlayScale(peaks.all, peaks.loudestStem(stemCount));
 
         int stemLayer = 0;
         for (int stemIdx : std::as_const(m_stackOrder)) {

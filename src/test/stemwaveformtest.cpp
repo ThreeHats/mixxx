@@ -306,57 +306,34 @@ TEST_F(StemWaveformTest, StemOverlayScaleLiftsTheLoudestStemToTheMix) {
 // must keep one height at each gain, thus no gain may come in twice.
 TEST_F(StemWaveformTest, StemStripReachesTheHeightOfTheNormalWaveform) {
     constexpr float kHalfBreadth = 40.0f; // A waveform of 80 pixels
-    // The measured values: the mix reaches 250, the four stems 100, 75, 50
-    // and 25.
+    // Two strips of a real track: the loudest stem is 60 percent of the mix
+    // in one strip and 95 percent in the other. Each strip gets its own lift.
     std::array<WaveformData, 2> data{};
-    setDatum(&data[0], 250, {{100, 75, 50, 25}});
-    setDatum(&data[1], 250, {{100, 75, 50, 25}});
-    mixxx::StemTrackScale trackScale;
-    const float scale = trackScale.scale(data.data(), 2, 2, 4);
-    EXPECT_FLOAT_EQ(2.5f, scale);
-
-    for (const float allGain : {0.5f, 1.0f, 2.0f}) {
-        const float normalHeight = mixxx::mixStripHalfHeight(
-                250, allGain, kHalfBreadth);
-        const float stemHeight = mixxx::stemStripHalfHeight(
-                100, scale, 1.0f, allGain, kHalfBreadth);
-        EXPECT_FLOAT_EQ(normalHeight, stemHeight)
-                << "the gain " << allGain << " does not act the same way";
-
-        // The stems keep their size relative to each other.
-        const float bassHeight = mixxx::stemStripHalfHeight(
-                75, scale, 1.0f, allGain, kHalfBreadth);
-        EXPECT_FLOAT_EQ(0.75f, bassHeight / stemHeight);
-        // The fader of a stem lowers only that stem.
-        EXPECT_FLOAT_EQ(stemHeight / 2.0f,
-                mixxx::stemStripHalfHeight(100, scale, 0.5f, allGain, kHalfBreadth));
+    setDatum(&data[0], 250, {{150, 75, 50, 25}});
+    setDatum(&data[1], 200, {{40, 190, 30, 10}});
+    for (int strip = 0; strip < 2; strip++) {
+        const mixxx::StemStripPeaks peaks =
+                mixxx::stemStripPeaks(data.data(), strip, strip + 1, 4);
+        const float scale = mixxx::stemOverlayScale(peaks.all, peaks.loudestStem(4));
+        for (const float allGain : {0.5f, 1.0f, 2.0f}) {
+            const float normalHeight = mixxx::mixStripHalfHeight(
+                    peaks.all, allGain, kHalfBreadth);
+            const float stemHeight = mixxx::stemStripHalfHeight(
+                    peaks.loudestStem(4), scale, 1.0f, allGain, kHalfBreadth);
+            EXPECT_FLOAT_EQ(normalHeight, stemHeight)
+                    << "strip " << strip << " gain " << allGain;
+        }
+        // The stems keep their size relative to each other in the strip.
+        const float first = mixxx::stemStripHalfHeight(
+                peaks.stems[0], scale, 1.0f, 1.0f, kHalfBreadth);
+        const float second = mixxx::stemStripHalfHeight(
+                peaks.stems[1], scale, 1.0f, 1.0f, kHalfBreadth);
+        EXPECT_FLOAT_EQ(static_cast<float>(peaks.stems[1]) / peaks.stems[0],
+                second / first);
     }
-}
-
-// The factor holds for the whole track, thus a stem keeps its height when
-// another stem starts. The reader takes the part that the analyzer filled.
-TEST_F(StemWaveformTest, StemTrackScaleReadsTheWholeTrackOnlyOneTime) {
-    std::array<WaveformData, 4> data{};
-    // A part with the bass alone, then a part with the drums over it.
-    setDatum(&data[0], 60, {{0, 60, 0, 0}});
-    setDatum(&data[1], 60, {{0, 60, 0, 0}});
-    setDatum(&data[2], 200, {{140, 60, 0, 0}});
-    setDatum(&data[3], 200, {{140, 60, 0, 0}});
-
-    mixxx::StemTrackScale scale;
-    // The analyzer filled the first half. The bass alone is the mix there.
-    EXPECT_FLOAT_EQ(1.0f, scale.scale(data.data(), 4, 2, 4));
-    // The second half arrives and the factor follows the whole track.
-    const float full = scale.scale(data.data(), 4, 4, 4);
-    EXPECT_FLOAT_EQ(200.0f / 140.0f, full);
-    // A second read of the same waveform gives the same factor.
-    EXPECT_FLOAT_EQ(full, scale.scale(data.data(), 4, 4, 4));
-
-    // Another waveform starts the count again.
-    std::array<WaveformData, 2> other{};
-    setDatum(&other[0], 100, {{50, 0, 0, 0}});
-    setDatum(&other[1], 100, {{50, 0, 0, 0}});
-    EXPECT_FLOAT_EQ(2.0f, scale.scale(other.data(), 2, 2, 4));
+    // The fader of a stem lowers only that stem.
+    EXPECT_FLOAT_EQ(mixxx::stemStripHalfHeight(100, 2.0f, 1.0f, 1.0f, kHalfBreadth) / 2.0f,
+            mixxx::stemStripHalfHeight(100, 2.0f, 0.5f, 1.0f, kHalfBreadth));
 }
 
 // In the Stacked mode a lane shows the level of its own stem, thus the
