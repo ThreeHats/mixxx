@@ -349,7 +349,8 @@ void AnalyzerBeats::storeDownbeatOnly(const TrackPointer& pTrack) {
     }
     const mixxx::BeatsPointer pWithBarPhase =
             detectDownbeat(pTrack, pBeats, beatPositions);
-    if (pWithBarPhase != pBeats) {
+    // A grid that keeps its phase needs no write, thus the track stays clean.
+    if (pWithBarPhase && pWithBarPhase->barPhase() != pBeats->barPhase()) {
         pTrack->trySetBeats(pWithBarPhase);
     }
 }

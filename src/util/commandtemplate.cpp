@@ -54,8 +54,8 @@ QStringList expandCommandTemplate(const QString& commandTemplate,
         return fail(QObject::tr("The command is empty."));
     }
 
-    // A name in any case matches, thus a name in the wrong case gives an
-    // error and does not reach the program as plain text.
+    // The pattern matches a name in any case. A name in the wrong case
+    // gives an error, thus it never goes to the program as plain text.
     static const QRegularExpression placeholderRegex(QStringLiteral(
             "\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}|\\$([A-Za-z_][A-Za-z0-9_]*)"));
     QStringList expandedTokens;

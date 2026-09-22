@@ -15,8 +15,8 @@ class AnalyzerTrack {
         bool downbeatOnly = false;
     };
 
-    // Two constructors, because a default argument of `Options()` would ask
-    // for the member default of a nested class before the class ends.
+    // Two constructors. A default argument of `Options()` would ask for the
+    // member default of a nested class before the class ends.
     explicit AnalyzerTrack(TrackPointer track);
     AnalyzerTrack(TrackPointer track, Options options);
 
