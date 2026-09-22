@@ -237,6 +237,38 @@ report, not the rule.
 - Fast analysis reads only the first minute of a track. The phase then comes
   from that minute.
 
+### Measured on real music
+
+Two electronic dance tracks of the rig, at 128 and at 134 BPM with a
+constant tempo, got no phase from the detector. The probe test
+`src/test/downbeatprobe_test.cpp` (it runs only with `MUXIC_DOWNBEAT_PROBE`
+set to a directory of audio files) shows why:
+
+| Track | Beats | Mean change into the beat, phase 0 to 3 | Winner of each quarter |
+|---|---|---|---|
+| A, 128 BPM | 451 | 0.355, 0.285, 0.358, 0.309 | 2, 0, 3, 0 |
+| B, 134 BPM | 665 | 0.335, 0.336, 0.341, 0.316 | 1, 2, 0, 2 |
+
+The qm-dsp `DownBeat` class takes the phase with the largest mean spectral
+change into the beat, and it puts a downbeat on every fourth beat from
+there. Its output is one phase by construction, thus its histogram says
+nothing about confidence. On these tracks the four means lie within 3
+percent of each other, and the winner changes from one quarter of the track
+to the next. The spectral difference between beats is not a downbeat clue on
+dense dance music, where each beat carries a kick and the bass runs through
+the bar. The vote then stays at chance, and the detector reports no phase.
+That is the correct answer of this detector, not a fault of the threshold. A
+lower threshold marks wrong bars, which is worse than no bar.
+
+A second feature was measured on the same two tracks: the low band energy
+after each beat by phase, and the step of the energy from one beat to the
+next by phase. Both put phase 0 first on both tracks, but two tracks prove
+nothing, and no listener confirmed the phase. This is the place to go on
+from, with a reference set of tracks whose downbeat a person marked.
+
+The controls below work regardless. Set the downbeat by hand at the first
+bar, and the grid, the waveform and the OSC message carry it.
+
 ## The controls
 
 `BpmControl` holds them, next to `beats_translate_curpos`.
@@ -337,10 +369,13 @@ decks send two bar phases.
   features would need.
 - No time signature other than 4/4. Nothing writes `beats_per_bar` with
   another value.
-- No machine learning backend. madmom or a similar model as an external
-  command is the way to a better result outside dance music.
+- No machine learning backend. The qm-dsp detector finds no phase on the
+  dance music of the rig (see Measured on real music). A model such as
+  madmom, BeatNet or beat_this, run as an external command in the way the
+  stem conversion runs its separator, is the way to automatic downbeats.
 - No downbeat in the waveform overview and no downbeat in the library.
 - No detection for a track that already has a grid. The user must run
   **Reanalyze**.
-- The detector is tested on synthetic click tracks only. It is not measured
-  against a reference set of real music.
+- The detector finds the phase of a synthetic click track and of no real
+  track that was tried. It is not measured against a reference set of real
+  music with a marked downbeat.
