@@ -290,8 +290,8 @@ template with placeholders, no shell, and the program found on the path.
    bar. A line with the place 1 is a downbeat. A line that holds no number
    is skipped. Tab, space, comma and semicolon all separate the two fields.
 4. It maps each downbeat time to the nearest beat of the grid that Mixxx
-   computed. A downbeat before the first beat or after the last one drops
-   out.
+   computed. A downbeat before the first beat, after the last one, or
+   farther from its beat than a quarter of the beat period drops out.
 5. It counts, for each place of the bar, the downbeats that fall on it, and
    hands the histogram to `DownbeatDetector::scoreVotes`, which is the same
    significance test that the built in detector uses.
@@ -299,6 +299,16 @@ template with placeholders, no shell, and the program found on the path.
 The phase comes from the vote, not from the labels of the program. A
 program that finds the bars of a track but a tempo that the Mixxx grid does
 not share gives a scattered histogram, and the test then gives no phase.
+
+### What the vote refuses
+
+Three rules stand between the program and a wrong bar.
+
+| Rule | Why |
+|---|---|
+| A downbeat farther from its grid beat than a quarter of the beat period drops out | The two grids walk apart there, and that downbeat marks a place of the bar that Mixxx never plays |
+| A second phase over the significance mark refuses the phase | Two winners mean that the grids walk apart over the track. A wrong bar is worse than no bar |
+| The trials stop at the bars of the track, and more than 1.5 downbeats for each bar refuse the track | A program that counts half or double the tempo reports more downbeats than the track has bars, and those votes are not one trial for each bar |
 
 ### The order of the two detectors
 
@@ -313,34 +323,51 @@ The log carries one line for each track:
 muxic downbeat: <file> source "external" accepted true phase 3 confidence 0.739
 ```
 
+A line that says `no fallback` comes from **Detect Downbeats** with the
+command as the choice: no built in detector holds the audio of that track.
+
 ### The settings
 
-The BPM page of the preferences holds three fields under the downbeat
-checkbox: the detector, the command and the timeout. They go to `mixxx.cfg`
-in the group `[BeatDetection]`:
+The BPM page of the preferences holds four fields under the downbeat
+checkbox: the detector, the command, the timeout and the commands that run
+at one time. They go to `mixxx.cfg` in the group `[BPM]`, next to the
+downbeat checkbox:
 
 ```
-[BeatDetection]
+[BPM]
+DownbeatDetectionEnabled 1
 DownbeatDetector external
-DownbeatCommand beat_this --gpu 0 -o "$OUTPUT" "$INPUT"
+DownbeatCommand beat_this --gpu 0 -o "$OUTPUT" -- "$INPUT"
 DownbeatTimeoutSeconds 120
+DownbeatCommandJobs 1
 ```
 
 | Item | Default | Meaning |
 |---|---|---|
 | `DownbeatDetector` | `builtin` | `builtin` or `external` |
-| `DownbeatCommand` | `beat_this --gpu 0 -o "$OUTPUT" "$INPUT"` | The program and its arguments |
+| `DownbeatCommand` | `beat_this --gpu 0 -o "$OUTPUT" -- "$INPUT"` | The program and its arguments |
 | `DownbeatTimeoutSeconds` | 120 | Mixxx kills the program after this time |
+| `DownbeatCommandJobs` | 1 | The commands that run at one time |
 
 The template holds no shell. A quote groups a word, `$INPUT` and `$OUTPUT`
-take their values, and any other `$NAME` is an error. Write the full path of
-the program when the desktop session of the user does not carry its
-directory on `PATH`.
+take their values, and any other `$NAME` is an error. `$INPUT` is always an
+absolute path. Write the full path of the program when the desktop session
+of the user does not carry its directory on `PATH`.
+
+Mixxx runs one analyzer thread for each processor, and each thread holds a
+detector of its own. **The card sees at most `DownbeatCommandJobs`
+commands at one time**, because one gate holds them all. Keep the number at
+1 while one model fills the card: 16 copies of a model do not fit on 12 GB,
+and each failure falls back to the built in detector, which finds no phase
+on this music.
 
 The command runs on the analyzer thread, which is neither the GUI thread nor
 the engine thread, thus the wait there costs nothing to the sound. The
-detector reads the stop flag of that thread five times a second: a cancelled
-analysis kills the program.
+detector reads the stop flag of that thread five times a second, while it
+waits for a slot, while it waits for the start and while the program runs.
+A cancelled analysis kills the program. The program runs in a session of its
+own, thus the kill reaches the python and the workers that a wrapper script
+starts, and no such process holds the card after a cancel.
 
 ### Install beat\_this
 
@@ -365,20 +392,34 @@ is the format that the parser reads.
 
 ### The numbers on real music
 
-Four tracks of the library of the rig, at 44.1 kHz. The command was
-beat\_this on a GeForce RTX 2060. **A** is one of the two tracks that got no
-phase from the built in detector.
+Four tracks of the library of the rig, at 44.1 kHz. **A** is one of the two
+tracks that got no phase from the built in detector.
 
-| Track | Beats | Built in | External | Votes of the external run, phase 0 to 3 |
-|---|---|---|---|---|
-| A, Bad Girl, 128 BPM | 451 | no phase (0.060) | **phase 0**, confidence 0.376 | 58, 50, 0, 1 |
-| B, Do It To It, 125 BPM | 262 | phase 3 (0.303) | **phase 3**, confidence 0.508 | 24, 0, 0, 41 |
-| C, Gem World, 150 BPM | 567 | phase 3 (0.300) | **phase 3**, confidence 0.739 | 12, 15, 0, 111 |
-| D, levitation, 136 BPM | 370 | no phase (0.116) | **phase 2**, confidence 0.436 | 10, 2, 45, 21 |
+The numbers come from beat\_this run on the host on a GeForce RTX 2060, with
+its output files replayed into the probe with the template
+`cp "$INPUT.beats" "$OUTPUT"`. The build container holds no card and no
+Python, thus the program itself cannot run there. The lists are the real
+answers of the model; only the start of the process is a replay.
 
-The external detector found a phase on all four tracks. The built in
-detector found one on two of them, and it agreed with the external detector
+| Track | Beats | Built in | External | Downbeats: reported, on the grid | Votes, phase 0 to 3 |
+|---|---|---|---|---|---|
+| A, Bad Girl, 128 BPM | 451 | no phase (0.060) | **phase 0**, confidence 1.000 | 110, 31 | 31, 0, 0, 0 |
+| B, Do It To It, 125 BPM | 262 | phase 3 (0.303) | **phase 3**, confidence 1.000 | 65, 40 | 0, 0, 0, 40 |
+| C, Gem World, 150 BPM | 567 | phase 3 (0.300) | **phase 3**, confidence 0.739 | 139, 138 | 12, 15, 0, 111 |
+| D, levitation, 136 BPM | 370 | no phase (0.116) | **phase 2**, confidence 0.419 | 78, 39 | 6, 1, 22, 10 |
+
+The external detector gives a phase on all four tracks. The built in
+detector gives one on two of them, and it agrees with the external detector
 on both.
+
+The quarter beat tolerance is what makes track A clean. The beat grid of
+Mixxx and the beats of the model walk one beat apart over that track. Before
+the tolerance the vote read 58 for phase 0 against 50 for phase 1, and both
+numbers stood over the significance mark. Now the 79 downbeats that sit
+between two grid beats drop out, the 31 that sit on a grid beat all say
+phase 0, and the two rules agree. The bar lines of that track are right
+where the grid fits the music; where the grid drifts, no phase can help,
+because Mixxx plays its own grid.
 
 No listener marked the bars of these tracks, thus the check is the two
 features that the probe prints: the low band energy after each beat by
@@ -395,12 +436,6 @@ The external phase is the phase that both features put first, on all four
 tracks. The earlier measurement put phase 0 first on track A by the same
 features, and the machine learning tracker says phase 0 as well.
 
-Track A is the weak one: 58 votes for phase 0 against 50 for phase 1. The
-beat grid of Mixxx and the beats of the tracker walk one beat apart over the
-track, thus the second half of the track votes for the neighbour phase. The
-significance test still takes phase 0, and phase 0 holds for a little over
-half of the track.
-
 Run times on the GeForce RTX 2060, with the model in the cache:
 
 | Track | Length | beat\_this on the card | beat\_this on the processor |
@@ -416,17 +451,26 @@ Mixxx does in the same job, costs more.
 
 ### How to measure again
 
-The probe test runs the command on real files:
+The probe test runs the command on real files. It needs a build on the host,
+with beat\_this on the `PATH`; the build container has no card and no Python.
 
 ```
 MUXIC_DOWNBEAT_PROBE=<directory of audio files> \
-MUXIC_DOWNBEAT_COMMAND='beat_this --gpu 0 -o "$OUTPUT" "$INPUT"' \
+MUXIC_DOWNBEAT_COMMAND='beat_this --gpu 0 -o "$OUTPUT" -- "$INPUT"' \
     build/mixxx-test --gtest_filter='DownbeatProbeTest.*'
 ```
 
 It prints, for each file, the beats, the numbers of the built in detector,
 the two energy features, and the phase, the confidence, the vote histogram
 and the run time of the command.
+
+To measure from the container instead, run beat\_this on the host first and
+replay its output files:
+
+```
+beat_this --gpu 0 --append -s .beats <directory>/*.flac
+MUXIC_DOWNBEAT_COMMAND='cp "$INPUT.beats" "$OUTPUT"' ...
+```
 
 ## Detect downbeats on a track that has a grid
 
@@ -437,14 +481,17 @@ for that case. It puts the tracks in the analysis queue with the option
 
 - keeps the beat grid of the track and reads the beats from it,
 - runs the detectors in the order above,
-- writes the grid again only when a detector found a phase.
+- writes the grid again only when the bar phase changes.
 
-The item works in the library and on a deck. A track with no beat grid and a
-track with a BPM lock get no downbeat step. The item runs even while the
-downbeat checkbox of the preferences is off, because the user asked for it. The analysis still reads the
-whole file, because the built in detector needs the audio; a run with the
-external command alone would not, but the queue decodes the file in any
-case.
+The item is grey while every selected track has a BPM lock or no beat grid.
+It runs even while the downbeat checkbox of the preferences is off, because
+the user asked for it.
+
+With the command as the choice this mode builds no built in detector: the
+command reads the track file, thus the decimated audio and the mix to mono
+would be work for nothing. **There is no fallback in that case**, and the
+log line says so. With the built in detector as the choice the mode feeds it
+as a full analysis does.
 
 ## The controls
 
@@ -482,7 +529,8 @@ The beat grid button row of each deck in LateNight has a tall button with
 one long bar and three short bars, between the beat shift buttons and the
 Undo and Lock column. A left click sets the downbeat to the beat closest to
 the play position. A right click moves the downbeat one beat later, thus four
-right clicks go once around the bar. The files: `res/skins/LateNight/waveform.xml`,
+right clicks go once around the bar. The files are
+`res/skins/LateNight/waveform.xml`,
 the two style sheets, `btn__downbeat.svg` in each scheme, and the tooltip
 `beats_set_downbeat` in `src/skin/legacy/tooltips.cpp`. Deere and the other
 skins have no button. Their mappings reach the controls by name.
@@ -565,6 +613,9 @@ decks send two bar phases.
   and the track then gets no phase.
 - No progress for the external command. The analyzer shows the progress of
   the file, and the command runs at the end of it.
-- The external command runs one track at a time, in each analyzer thread.
-  Nothing batches the tracks into one call of the program, which a card
-  would like better.
+- The external command runs one track at a time, and `DownbeatCommandJobs`
+  of them at one time. Nothing batches the tracks into one call of the
+  program, which a card would like better.
+- **Detect Downbeats** with the command as the choice still decodes the
+  whole file, because the analyzer queue decodes a track that any analyzer
+  wants. The command itself reads the file on its own.
