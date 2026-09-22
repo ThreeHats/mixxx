@@ -149,10 +149,8 @@ QWidget* RelatedTracksPanel::wrapLibraryWidget(WLibrary* pLibraryWidget,
     auto* pSplitter = new QSplitter(Qt::Vertical, pLibraryWidget->parentWidget());
     pSplitter->setObjectName(kSplitterObjectName);
     pSplitter->setChildrenCollapsible(false);
-    // The skin gave its size policy to the library widget. The splitter
-    // stands in its place and takes it over. <MinimumSize>, <MaximumSize>
-    // and <Style> of the <Library> node stay on the library widget. No
-    // skin of Mixxx sets them.
+    // The splitter takes the size policy of the library widget. The other
+    // values of the Library node stay, and no skin of Mixxx sets them.
     pSplitter->setSizePolicy(pLibraryWidget->sizePolicy());
 
     auto* pPanel = new RelatedTracksPanel(pSplitter,
