@@ -179,9 +179,8 @@ bool WaveformRendererStem::preprocessInner() {
 
     const int stemCount = static_cast<int>(std::min<qsizetype>(
             stemInfo.size(), mixxx::kMaxSupportedStems));
-    // The four stems sum to the mix, thus one stem alone is much smaller. One
-    // factor for the whole track lifts the loudest stem to the mix.
-    // In the Stacked mode each stem has a lane that shows its own level.
+    // The four stems sum to the mix, thus one alone is much smaller. One
+    // factor lifts the loudest stem. A lane of the split mode gets none.
     const float stemScale = m_splitStemTracks
             ? 1.0f
             : m_stemTrackScale.scale(data,

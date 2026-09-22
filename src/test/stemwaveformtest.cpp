@@ -302,9 +302,8 @@ TEST_F(StemWaveformTest, StemOverlayScaleLiftsTheLoudestStemToTheMix) {
     EXPECT_FLOAT_EQ(1.0f, mixxx::stemOverlayScale(0, 200));
 }
 
-// The stem renderer and every other signal renderer call these two
-// functions. The height of a stem track must follow the height of a normal
-// track at each value of the gain, thus neither may apply the gain twice.
+// The renderers call these two functions. A stem track and a normal track
+// must keep one height at each gain, thus no gain may come in twice.
 TEST_F(StemWaveformTest, StemStripReachesTheHeightOfTheNormalWaveform) {
     constexpr float kHalfBreadth = 40.0f; // A waveform of 80 pixels
     // The measured values: the mix reaches 250, the four stems 100, 75, 50

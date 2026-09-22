@@ -34,8 +34,8 @@ bool AnalyzerEbur128::initialize(
     }
     DEBUG_ASSERT(m_pState == nullptr);
     m_channelCount = channelCount;
-    // The channel map of libebur128 is right for a surround signal but not
-    // for a stem file, which is four stereo parts. A stem file thus mixes.
+    // The channel map of libebur128 fits a surround signal. A stem file is
+    // four stereo parts, thus the analyzer mixes it down to stereo.
     const bool isStem = channelCount == mixxx::audio::ChannelCount::stem();
     m_pState = ebur128_init(
             isStem ? mixxx::audio::ChannelCount::stereo() : channelCount,
