@@ -6,7 +6,16 @@
 #include <cmath>
 #include <limits>
 
+#include "track/beats.h"
 #include "util/assert.h"
+
+namespace {
+
+/// A grid holds an endless row of beats, thus a walk over it needs a bound
+/// that no real track reaches.
+constexpr int kMaxGridBeats = 1000000;
+
+} // anonymous namespace
 
 namespace mixxx {
 
@@ -120,8 +129,7 @@ DownbeatPhase DownbeatDetector::scorePhases(
     }
 
     // Each bar votes for the transition that changed the audio most.
-    int bars = 0;
-    int votes = 0;
+    std::vector<int> votes(beatsPerBar, 0);
     for (int start = 0; start + beatsPerBar <= count; start += beatsPerBar) {
         int largest = start;
         for (int i = start + 1; i < start + beatsPerBar; i++) {
@@ -129,14 +137,49 @@ DownbeatPhase DownbeatDetector::scorePhases(
                 largest = i;
             }
         }
-        bars++;
-        if ((largest + 1) % beatsPerBar == result.phase) {
-            votes++;
+        votes[(largest + 1) % beatsPerBar]++;
+    }
+    return scoreVotes(votes, result.phase);
+}
+
+// static
+DownbeatPhase DownbeatDetector::scoreVotes(
+        const std::vector<int>& votes, int phase, int maxBars) {
+    DownbeatPhase result;
+    const int beatsPerBar = static_cast<int>(votes.size());
+    if (beatsPerBar < 2) {
+        return result;
+    }
+    int bars = 0;
+    int best = 0;
+    for (int candidate = 0; candidate < beatsPerBar; candidate++) {
+        if (votes[candidate] < 0) {
+            return result;
+        }
+        bars += votes[candidate];
+        if (votes[candidate] > votes[best]) {
+            best = candidate;
         }
     }
     if (bars == 0) {
-        return DownbeatPhase();
+        return result;
     }
+
+    // A program that counts a tempo of its own reports more downbeats than
+    // the track has bars. Those votes are not one trial for each bar. The
+    // cap holds the trials at the bars of the track.
+    double trials = bars;
+    double scale = 1.0;
+    if (maxBars > 0 && bars > maxBars) {
+        trials = maxBars;
+        scale = trials / bars;
+    }
+    // A handful of bars says nothing, and the binomial law below fits such a
+    // count badly. The built in path keeps this bound with kMinBeats already.
+    if (trials < kMinBeats / beatsPerBar) {
+        return result;
+    }
+    result.phase = (phase >= 0 && phase < beatsPerBar) ? phase : best;
 
     // Under no bar structure each bar votes for the winner with the chance
     // 1 / beatsPerBar, thus the votes follow a binomial law. A vote share
@@ -144,12 +187,43 @@ DownbeatPhase DownbeatDetector::scorePhases(
     // chance. The phase counts as found only when the votes stand
     // `kSigmaFactor` standard deviations over the mean of that law.
     const double chance = 1.0 / beatsPerBar;
-    const double mean = bars * chance;
-    const double deviation = std::sqrt(bars * chance * (1.0 - chance));
-    const double part = static_cast<double>(votes) / bars;
+    const double mean = trials * chance;
+    const double deviation = std::sqrt(trials * chance * (1.0 - chance));
+    const double threshold = mean + kSigmaFactor * deviation;
+
+    // Two phases over the mark mean that the two grids walk apart. One of
+    // the phases is wrong, and a wrong bar is worse than no bar.
+    double runnerUp = 0.0;
+    for (int candidate = 0; candidate < beatsPerBar; candidate++) {
+        if (candidate == result.phase) {
+            continue;
+        }
+        runnerUp = std::max(runnerUp, votes[candidate] * scale);
+    }
+
+    const double part = static_cast<double>(votes[result.phase]) / bars;
     result.confidence = std::clamp((part - chance) / (1.0 - chance), 0.0, 1.0);
-    result.accepted = votes >= mean + kSigmaFactor * deviation;
+    result.accepted = votes[result.phase] * scale >= threshold && runnerUp < threshold;
     return result;
+}
+
+QVector<audio::FramePos> gridBeatPositions(
+        const Beats& beats, audio::FramePos endPosition) {
+    QVector<audio::FramePos> positions;
+    if (!endPosition.isValid() || endPosition <= audio::kStartFramePos) {
+        return positions;
+    }
+    audio::FramePos position = beats.firstBeat();
+    while (position.isValid() && position <= endPosition &&
+            positions.size() < kMaxGridBeats) {
+        positions.append(position);
+        const audio::FramePos next = beats.findNthBeat(position, 2);
+        if (!next.isValid() || next <= position) {
+            break;
+        }
+        position = next;
+    }
+    return positions;
 }
 
 } // namespace mixxx

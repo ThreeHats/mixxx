@@ -15,6 +15,7 @@
 #include "track/steminfoimporter.h"
 #include "track/track.h"
 #include "util/assert.h"
+#include "util/commandtemplate.h"
 #include "util/logger.h"
 
 namespace {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QString>
+
 #include "preferences/usersettings.h"
 
 #define VAMP_CONFIG_KEY "[Vamp]"
@@ -19,6 +21,10 @@
 #define BPM_FAST_ANALYSIS_ENABLED "FastAnalysisEnabled"
 #define BPM_STEM_STRATEGY "stem_strategy"
 #define BPM_DOWNBEAT_DETECTION_ENABLED "DownbeatDetectionEnabled"
+#define BPM_DOWNBEAT_DETECTOR "DownbeatDetector"
+#define BPM_DOWNBEAT_COMMAND "DownbeatCommand"
+#define BPM_DOWNBEAT_TIMEOUT_SECONDS "DownbeatTimeoutSeconds"
+#define BPM_DOWNBEAT_COMMAND_JOBS "DownbeatCommandJobs"
 
 class BeatDetectionSettings {
   public:
@@ -29,6 +35,14 @@ class BeatDetectionSettings {
         // Automatic
         Enforced = 2
     };
+
+    /// The two values of the downbeat detector setting.
+    static constexpr auto kDownbeatDetectorBuiltIn = "builtin";
+    static constexpr auto kDownbeatDetectorExternal = "external";
+    /// The program that finds the downbeats of one track. See
+    /// `tools/muxic/docs/downbeats.md`.
+    static constexpr auto kDownbeatCommandDefault =
+            "beat_this --gpu 0 -o \"$OUTPUT\" -- \"$INPUT\"";
 
     BeatDetectionSettings(UserSettingsPointer pConfig) : m_pConfig(pConfig) {}
 
@@ -61,6 +75,30 @@ class BeatDetectionSettings {
             BPM_CONFIG_KEY,
             BPM_DOWNBEAT_DETECTION_ENABLED,
             true);
+
+    DEFINE_PREFERENCE_HELPERS(DownbeatDetectorName,
+            QString,
+            BPM_CONFIG_KEY,
+            BPM_DOWNBEAT_DETECTOR,
+            QString::fromLatin1(kDownbeatDetectorBuiltIn));
+
+    DEFINE_PREFERENCE_HELPERS(DownbeatCommand,
+            QString,
+            BPM_CONFIG_KEY,
+            BPM_DOWNBEAT_COMMAND,
+            QString::fromLatin1(kDownbeatCommandDefault));
+
+    DEFINE_PREFERENCE_HELPERS(DownbeatTimeoutSeconds,
+            int,
+            BPM_CONFIG_KEY,
+            BPM_DOWNBEAT_TIMEOUT_SECONDS,
+            120);
+
+    DEFINE_PREFERENCE_HELPERS(DownbeatCommandJobs,
+            int,
+            BPM_CONFIG_KEY,
+            BPM_DOWNBEAT_COMMAND_JOBS,
+            1);
 
     QString getBeatPluginId() const {
         return m_pConfig->getValue<QString>(ConfigKey(

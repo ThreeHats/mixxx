@@ -1515,6 +1515,7 @@ add_library(
   src/musicbrainz/web/coverartarchivelinkstask.cpp
   src/musicbrainz/web/musicbrainzrecordingstask.cpp
   src/muxic/downbeats/downbeatdetector.cpp
+  src/muxic/downbeats/externaldownbeatdetector.cpp
   src/muxic/librarycolumns/librarycolumns.cpp
   src/muxic/librarycolumns/searchfilters.cpp
   src/muxic/librarycolumns/trackmeta.cpp
@@ -1656,6 +1657,7 @@ add_library(
   src/util/color/colorpalette.cpp
   src/util/color/predefinedcolorpalettes.cpp
   src/util/colorcomponents.cpp
+  src/util/commandtemplate.cpp
   src/util/console.cpp
   src/util/db/dbconnection.cpp
   src/util/db/dbconnectionpool.cpp
@@ -2937,6 +2939,7 @@ if(BUILD_TESTING)
     src/test/controlobjectscripttest.cpp
     src/test/controlpotmetertest.cpp
     src/test/coreservicestest.cpp
+    src/test/commandtemplate_test.cpp
     src/test/coverartcache_test.cpp
     src/test/coverartutils_test.cpp
     src/test/cratestorage_test.cpp
@@ -2958,6 +2961,7 @@ if(BUILD_TESTING)
     src/test/enginemixertest.cpp
     src/test/enginemicrophonetest.cpp
     src/test/enginesynctest.cpp
+    src/test/externaldownbeat_test.cpp
     src/test/fileinfo_test.cpp
     src/test/frametest.cpp
     src/test/globaltrackcache_test.cpp

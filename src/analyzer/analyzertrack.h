@@ -10,9 +10,15 @@ class AnalyzerTrack {
     struct Options {
         /// If set, overrides whether the analysis should assume constant BPM.
         std::optional<bool> useFixedTempo;
+        /// Look for the first beat of the bar against the beat grid that the
+        /// track has, and leave that grid alone.
+        bool downbeatOnly = false;
     };
 
-    explicit AnalyzerTrack(TrackPointer track, Options options = Options());
+    // Two constructors. A default argument of `Options()` would ask for the
+    // member default of a nested class before the class ends.
+    explicit AnalyzerTrack(TrackPointer track);
+    AnalyzerTrack(TrackPointer track, Options options);
 
     /// Fetches the (not-null) track to be analyzed.
     const TrackPointer& getTrack() const;

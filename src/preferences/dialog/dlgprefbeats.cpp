@@ -6,7 +6,9 @@
 
 DlgPrefBeats::DlgPrefBeats(QWidget* parent, UserSettingsPointer pConfig)
         : DlgPreferencePage(parent),
+          m_pConfig(pConfig),
           m_bpmSettings(pConfig),
+          m_downbeatSettings(mixxx::ExternalDownbeatSettings::readFrom(pConfig)),
           m_bAnalyzerEnabled(m_bpmSettings.getBpmDetectionEnabledDefault()),
           m_bFixedTempoEnabled(m_bpmSettings.getFixedTempoAssumptionDefault()),
           m_bFastAnalysisEnabled(m_bpmSettings.getFastAnalysisDefault()),
@@ -20,6 +22,9 @@ DlgPrefBeats::DlgPrefBeats(QWidget* parent, UserSettingsPointer pConfig)
     for (const auto& info : std::as_const(m_availablePlugins)) {
         comboBoxBeatPlugin->addItem(info.name(), info.id());
     }
+
+    comboBoxDownbeatDetector->addItem(tr("Built in"));
+    comboBoxDownbeatDetector->addItem(tr("External command"));
 
     slotUpdate();
 
@@ -84,8 +89,33 @@ DlgPrefBeats::DlgPrefBeats(QWidget* parent, UserSettingsPointer pConfig)
             &QComboBox::currentIndexChanged,
             this,
             &DlgPrefBeats::slotStemStrategyChanged);
+    connect(comboBoxDownbeatDetector,
+            &QComboBox::currentIndexChanged,
+            this,
+            &DlgPrefBeats::slotDownbeatDetectorChanged);
+    connect(lineEditDownbeatCommand,
+            &QLineEdit::textChanged,
+            this,
+            [this](const QString& text) {
+                m_downbeatSettings.setCommand(text);
+            });
+    connect(spinBoxDownbeatTimeout,
+            QOverload<int>::of(&QSpinBox::valueChanged),
+            this,
+            [this](int seconds) {
+                m_downbeatSettings.setTimeoutSeconds(seconds);
+            });
+    connect(spinBoxDownbeatJobs,
+            QOverload<int>::of(&QSpinBox::valueChanged),
+            this,
+            [this](int jobs) {
+                m_downbeatSettings.setJobs(jobs);
+            });
 
     setScrollSafeGuard(comboBoxBeatPlugin);
+    setScrollSafeGuard(comboBoxDownbeatDetector);
+    setScrollSafeGuard(spinBoxDownbeatTimeout);
+    setScrollSafeGuard(spinBoxDownbeatJobs);
 }
 
 DlgPrefBeats::~DlgPrefBeats() {
@@ -106,6 +136,7 @@ void DlgPrefBeats::slotResetToDefaults() {
     m_bReanalyze = m_bpmSettings.getReanalyzeWhenSettingsChangeDefault();
     m_bReanalyzeImported = m_bpmSettings.getReanalyzeImportedDefault();
     m_stemStrategy = m_bpmSettings.getStemStrategyDefault();
+    m_downbeatSettings = mixxx::ExternalDownbeatSettings();
 
     updateGui();
 }
@@ -158,6 +189,7 @@ void DlgPrefBeats::slotUpdate() {
     m_bFastAnalysisEnabled = m_bpmSettings.getFastAnalysis();
     m_bDetectDownbeats = m_bpmSettings.getDownbeatDetectionEnabled();
     m_stemStrategy = m_bpmSettings.getStemStrategy();
+    m_downbeatSettings = mixxx::ExternalDownbeatSettings::readFrom(m_pConfig);
 
     updateGui();
 }
@@ -169,6 +201,18 @@ void DlgPrefBeats::updateGui() {
     // Fast analysis cannot be combined with non-constant tempo beatgrids.
     checkBoxFastAnalysis->setEnabled(m_bAnalyzerEnabled && m_bFixedTempoEnabled);
     checkBoxDetectDownbeats->setEnabled(m_bAnalyzerEnabled);
+    const bool downbeatsOn = m_bAnalyzerEnabled && m_bDetectDownbeats;
+    const bool commandOn = downbeatsOn &&
+            m_downbeatSettings.detector() ==
+                    mixxx::DownbeatDetectorChoice::ExternalCommand;
+    comboBoxDownbeatDetector->setEnabled(downbeatsOn);
+    labelDownbeatDetector->setEnabled(downbeatsOn);
+    lineEditDownbeatCommand->setEnabled(commandOn);
+    labelDownbeatCommand->setEnabled(commandOn);
+    spinBoxDownbeatTimeout->setEnabled(commandOn);
+    labelDownbeatTimeout->setEnabled(commandOn);
+    spinBoxDownbeatJobs->setEnabled(commandOn);
+    labelDownbeatJobs->setEnabled(commandOn);
     checkBoxReanalyze->setEnabled(m_bAnalyzerEnabled);
     checkBoxReanalyzeImported->setEnabled(m_bAnalyzerEnabled);
 
@@ -200,6 +244,14 @@ void DlgPrefBeats::updateGui() {
     checkBoxFastAnalysis->setChecked(m_bFastAnalysisEnabled && m_bFixedTempoEnabled);
 
     checkBoxDetectDownbeats->setChecked(m_bDetectDownbeats);
+    comboBoxDownbeatDetector->setCurrentIndex(
+            m_downbeatSettings.detector() ==
+                            mixxx::DownbeatDetectorChoice::ExternalCommand
+                    ? 1
+                    : 0);
+    lineEditDownbeatCommand->setText(m_downbeatSettings.command());
+    spinBoxDownbeatTimeout->setValue(m_downbeatSettings.timeoutSeconds());
+    spinBoxDownbeatJobs->setValue(m_downbeatSettings.jobs());
     checkBoxReanalyze->setChecked(m_bReanalyze);
     checkBoxReanalyzeImported->setChecked(m_bReanalyzeImported);
 
@@ -251,6 +303,13 @@ void DlgPrefBeats::slotStemStrategyChanged(int index) {
     updateGui();
 }
 
+void DlgPrefBeats::slotDownbeatDetectorChanged(int index) {
+    m_downbeatSettings.setDetector(index == 1
+                    ? mixxx::DownbeatDetectorChoice::ExternalCommand
+                    : mixxx::DownbeatDetectorChoice::BuiltIn);
+    updateGui();
+}
+
 void DlgPrefBeats::slotApply() {
     m_bpmSettings.setBeatPluginId(m_selectedAnalyzerId);
     m_bpmSettings.setBpmDetectionEnabled(m_bAnalyzerEnabled);
@@ -260,4 +319,5 @@ void DlgPrefBeats::slotApply() {
     m_bpmSettings.setFastAnalysis(m_bFastAnalysisEnabled);
     m_bpmSettings.setDownbeatDetectionEnabled(m_bDetectDownbeats);
     m_bpmSettings.setStemStrategy(m_stemStrategy);
+    m_downbeatSettings.writeTo(m_pConfig);
 }

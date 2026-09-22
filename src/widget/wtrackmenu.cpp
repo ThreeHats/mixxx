@@ -592,6 +592,15 @@ void WTrackMenu::createActions() {
         });
     }
 
+    if (featureIsEnabled(Feature::BPM) && featureIsEnabled(Feature::Analyze)) {
+        m_pDetectDownbeatsAction =
+                make_parented<QAction>(tr("Detect Downbeats"), m_pBPMMenu);
+        connect(m_pDetectDownbeatsAction,
+                &QAction::triggered,
+                this,
+                &WTrackMenu::slotDetectDownbeats);
+    }
+
     if (featureIsEnabled(Feature::Analyze)) {
         m_pAnalyzeAction = make_parented<QAction>(tr("Analyze"), this);
         connect(m_pAnalyzeAction, &QAction::triggered, this, &WTrackMenu::slotAnalyze);
@@ -716,10 +725,15 @@ void WTrackMenu::setupActions() {
         m_pBPMMenu->addAction(m_pBpmFourThirdsAction);
         m_pBPMMenu->addAction(m_pBpmThreeHalvesAction);
         m_pBPMMenu->addAction(m_pBpmDoubleAction);
-        if (m_pTranslateBeatsHalf) {
+        if (m_pTranslateBeatsHalf || m_pDetectDownbeatsAction) {
             m_pBPMMenu->addSeparator();
+        }
+        if (m_pTranslateBeatsHalf) {
             m_pBPMMenu->addAction(m_pTranslateBeatsHalf);
             m_pBPMMenu->addAction(m_pSetDownbeatAction);
+        }
+        if (m_pDetectDownbeatsAction) {
+            m_pBPMMenu->addAction(m_pDetectDownbeatsAction);
         }
         m_pBPMMenu->addSeparator();
         m_pBPMMenu->addAction(m_pBpmLockAction);
@@ -878,6 +892,21 @@ std::pair<bool, bool> WTrackMenu::getTrackBpmLockStates() const {
         anyBpmNotLocked = !anyBpmLocked;
     }
     return std::pair<bool, bool>(anyBpmLocked, anyBpmNotLocked);
+}
+
+bool WTrackMenu::anyTrackHasBpm() const {
+    if (m_pTrackModel) {
+        // The column of the model answers this. A track pointer for each row
+        // of a large selection would cost the GUI thread too much.
+        const int column = m_pTrackModel->fieldIndex(LIBRARYTABLE_BPM);
+        for (const auto& trackIndex : m_trackIndexList) {
+            if (trackIndex.sibling(trackIndex.row(), column).data().toDouble() > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return m_pTrack && m_pTrack->getBeats() != nullptr;
 }
 
 int WTrackMenu::getCommonTrackRating() const {
@@ -1221,6 +1250,11 @@ void WTrackMenu::updateMenus() {
             m_pBpmDoubleAction->setEnabled(!anyBpmLocked);
             m_pBpmResetAction->setEnabled(!anyBpmLocked);
             m_pBpmUndoAction->setEnabled(!anyBpmLocked && canUndoBeatsChange());
+            if (m_pDetectDownbeatsAction) {
+                // The step writes the grid, and it needs a grid to read.
+                m_pDetectDownbeatsAction->setEnabled(
+                        anyBpmNotLocked && anyTrackHasBpm());
+            }
 
             // Append scaled BPM preview for single selection
             // TODO ... and multiple tracks with same BPM.
@@ -1575,6 +1609,12 @@ void WTrackMenu::slotSetDownbeat() {
     const ConfigKey key(m_deckGroup, QStringLiteral("beats_set_downbeat"));
     ControlObject::set(key, 1.0);
     ControlObject::set(key, 0.0);
+}
+
+void WTrackMenu::slotDetectDownbeats() {
+    AnalyzerTrack::Options options;
+    options.downbeatOnly = true;
+    addToAnalysis(options);
 }
 
 void WTrackMenu::slotImportMetadataFromFileTags() {

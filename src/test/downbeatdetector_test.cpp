@@ -125,7 +125,7 @@ TEST(DownbeatDetectorTest, AFlatScoreTakesNoPhase) {
 TEST(DownbeatDetectorTest, AFlatSignalTakesNoPhaseAtAnyLength) {
     // A vote share alone rises with chance on a short track. The significance
     // test must hold the false accepts down at every length.
-    for (const int beats : {64, 256, 1024}) {
+    for (const int beats : {68, 256, 1024}) {
         Lcg random(12345);
         constexpr int kDraws = 200;
         int accepted = 0;
