@@ -440,7 +440,8 @@ for that case. It puts the tracks in the analysis queue with the option
 - writes the grid again only when a detector found a phase.
 
 The item works in the library and on a deck. A track with no beat grid and a
-track with a BPM lock get no downbeat step. The analysis still reads the
+track with a BPM lock get no downbeat step. The item runs even while the
+downbeat checkbox of the preferences is off, because the user asked for it. The analysis still reads the
 whole file, because the built in detector needs the audio; a run with the
 external command alone would not, but the queue decodes the file in any
 case.
