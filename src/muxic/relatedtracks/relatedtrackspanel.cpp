@@ -7,12 +7,12 @@
 #include <QVBoxLayout>
 #include <algorithm>
 
-#include "control/controlproxy.h"
 #include "controllers/keyboard/keyboardeventfilter.h"
 #include "library/library.h"
 #include "library/trackcollection.h"
 #include "library/trackcollectionmanager.h"
 #include "moc_relatedtrackspanel.cpp"
+#include "muxic/relatedtracks/panelplacement.h"
 #include "muxic/relatedtracks/relateddeckwatcher.h"
 #include "muxic/relatedtracks/trackrelationstorage.h"
 #include "util/assert.h"
@@ -52,8 +52,7 @@ RelatedTracksPanel::RelatedTracksPanel(QWidget* pParent,
         : QWidget(pParent),
           m_pConfig(pConfig),
           m_pLibrary(pLibrary),
-          m_modelIsLoaded(false),
-          m_splitHeightPending(false) {
+          m_modelIsLoaded(false) {
     setObjectName(QStringLiteral("RelatedTracksPanel"));
 
     auto* pPanelLayout = new QVBoxLayout(this);
@@ -135,11 +134,6 @@ RelatedTracksPanel::RelatedTracksPanel(QWidget* pParent,
             &RelatedTracksPanel::slotUpdateNeeded);
 
     updateStatusLabel(DeckTrackList());
-
-    m_pShowControl = std::make_unique<ControlProxy>(kShowConfigKey, this);
-    m_pShowControl->connectValueChanged(
-            this, &RelatedTracksPanel::slotShowControlChanged);
-    setVisible(m_pShowControl->toBool());
 }
 
 RelatedTracksPanel::~RelatedTracksPanel() = default;
@@ -156,7 +150,9 @@ QWidget* RelatedTracksPanel::wrapLibraryWidget(WLibrary* pLibraryWidget,
     pSplitter->setObjectName(kSplitterObjectName);
     pSplitter->setChildrenCollapsible(false);
     // The skin gave its size policy to the library widget. The splitter
-    // stands in its place and takes it over.
+    // stands in its place and takes it over. <MinimumSize>, <MaximumSize>
+    // and <Style> of the <Library> node stay on the library widget. No
+    // skin of Mixxx sets them.
     pSplitter->setSizePolicy(pLibraryWidget->sizePolicy());
 
     auto* pPanel = new RelatedTracksPanel(pSplitter,
@@ -175,34 +171,16 @@ QWidget* RelatedTracksPanel::wrapLibraryWidget(WLibrary* pLibraryWidget,
 }
 
 void RelatedTracksPanel::setSplitter(QSplitter* pSplitter) {
-    m_pSplitter = pSplitter;
-    connect(pSplitter,
-            &QSplitter::splitterMoved,
-            this,
-            &RelatedTracksPanel::slotSplitterMoved);
-}
-
-void RelatedTracksPanel::showEvent(QShowEvent* pEvent) {
-    QWidget::showEvent(pEvent);
-    restoreSplitHeight();
-    m_pDeckWatcher->setActive(true);
-}
-
-void RelatedTracksPanel::resizeEvent(QResizeEvent* pEvent) {
-    QWidget::resizeEvent(pEvent);
-    if (m_splitHeightPending) {
-        // The skin gave the splitter no size at the first show.
-        restoreSplitHeight();
-    }
-}
-
-void RelatedTracksPanel::hideEvent(QHideEvent* pEvent) {
-    QWidget::hideEvent(pEvent);
-    m_pDeckWatcher->setActive(false);
-}
-
-void RelatedTracksPanel::slotShowControlChanged(double value) {
-    setVisible(value > 0.0);
+    m_pPlacement = make_parented<PanelPlacement>(this,
+            pSplitter,
+            m_pConfig,
+            kShowConfigKey,
+            kPanelHeightConfigKey,
+            kDefaultPanelHeight);
+    connect(m_pPlacement,
+            &PanelPlacement::shownChanged,
+            m_pDeckWatcher,
+            &RelatedDeckWatcher::setActive);
 }
 
 void RelatedTracksPanel::slotModeChanged() {
@@ -237,46 +215,15 @@ void RelatedTracksPanel::updateStatusLabel(const DeckTrackList& deckTracks) {
         deckNumbers.append(QString::number(deckTrack.deckNumber));
     }
     const QString decks = deckNumbers.join(QStringLiteral(", "));
-    m_pStatusLabel->setText(m_pSuggestionsButton->isChecked()
-                    ? tr("Suggestions for deck %1").arg(decks)
-                    : tr("Tracks that go with deck %1").arg(decks));
-}
-
-void RelatedTracksPanel::restoreSplitHeight() {
-    if (m_pSplitter.isNull()) {
+    if (m_pSuggestionsButton->isChecked()) {
+        m_pStatusLabel->setText(deckNumbers.size() == 1
+                        ? tr("Suggestions for deck %1").arg(decks)
+                        : tr("Suggestions for decks %1").arg(decks));
         return;
     }
-    const QList<int> sizes = m_pSplitter->sizes();
-    if (sizes.size() != 2) {
-        return;
-    }
-    const int total = sizes.at(0) + sizes.at(1);
-    if (total <= 0) {
-        // The skin has not given the splitter a size yet. The next resize
-        // of the panel gives it one.
-        m_splitHeightPending = true;
-        return;
-    }
-    m_splitHeightPending = false;
-    // The panel takes at most half of the library area.
-    const int height = std::min(
-            m_pConfig->getValue(kPanelHeightConfigKey, kDefaultPanelHeight),
-            total / 2);
-    if (height <= 0 || height == sizes.at(1)) {
-        return;
-    }
-    m_pSplitter->setSizes({total - height, height});
-}
-
-void RelatedTracksPanel::slotSplitterMoved() {
-    if (m_pSplitter.isNull() || !isVisible()) {
-        return;
-    }
-    const QList<int> sizes = m_pSplitter->sizes();
-    if (sizes.size() != 2 || sizes.at(1) <= 0) {
-        return;
-    }
-    m_pConfig->setValue(kPanelHeightConfigKey, sizes.at(1));
+    m_pStatusLabel->setText(deckNumbers.size() == 1
+                    ? tr("Tracks that go with deck %1").arg(decks)
+                    : tr("Tracks that go with decks %1").arg(decks));
 }
 
 } // namespace muxic

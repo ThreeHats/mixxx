@@ -1,11 +1,14 @@
 #include "muxic/relatedtracks/relateddeckwatcher.h"
 
+#include <algorithm>
+
 #include "control/controlproxy.h"
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
 #include "moc_relateddeckwatcher.cpp"
 #include "muxic/relatedtracks/trackrelationstorage.h"
 #include "track/track.h"
+#include "util/defs.h"
 
 namespace muxic {
 
@@ -15,7 +18,7 @@ RelatedDeckWatcher::RelatedDeckWatcher(QObject* pParent,
         : QObject(pParent),
           m_active(false),
           m_pending(true) {
-    m_pNumDecksControl = std::make_unique<ControlProxy>(
+    m_pNumDecksControl = make_parented<ControlProxy>(
             QStringLiteral("[App]"), QStringLiteral("num_decks"), this);
     m_pNumDecksControl->connectValueChanged(
             this, [this](double) { requestUpdate(); });
@@ -40,7 +43,9 @@ RelatedDeckWatcher::~RelatedDeckWatcher() = default;
 
 DeckTrackList RelatedDeckWatcher::deckTracks() const {
     DeckTrackList deckTracks;
-    const int numDecks = static_cast<int>(m_pNumDecksControl->get());
+    // A control holds a double that a script may set to anything.
+    const int numDecks = std::clamp(
+            static_cast<int>(m_pNumDecksControl->get()), 0, kMaxNumberOfDecks);
     for (int deck = 1; deck <= numDecks; ++deck) {
         const TrackPointer pTrack = PlayerInfo::instance().getTrackInfo(
                 PlayerManager::groupForDeck(deck - 1));

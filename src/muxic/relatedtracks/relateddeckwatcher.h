@@ -2,10 +2,10 @@
 
 #include <QObject>
 #include <QTimer>
-#include <memory>
 
 #include "muxic/relatedtracks/decktrack.h"
 #include "track/track_decl.h"
+#include "util/parented_ptr.h"
 
 class ControlProxy;
 
@@ -52,7 +52,7 @@ class RelatedDeckWatcher : public QObject {
     void slotTimeout();
 
   private:
-    std::unique_ptr<ControlProxy> m_pNumDecksControl;
+    parented_ptr<ControlProxy> m_pNumDecksControl;
     QTimer m_timer;
     bool m_active;
     /// A request that came in while the watcher was not active.

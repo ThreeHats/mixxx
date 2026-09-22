@@ -1,15 +1,12 @@
 #pragma once
 
-#include <QPointer>
 #include <QWidget>
-#include <memory>
 
 #include "muxic/relatedtracks/decktrack.h"
 #include "muxic/relatedtracks/relatedtrackstablemodel.h"
 #include "preferences/usersettings.h"
 #include "util/parented_ptr.h"
 
-class ControlProxy;
 class KeyboardEventFilter;
 class Library;
 class QLabel;
@@ -20,6 +17,7 @@ class WTrackTableView;
 
 namespace muxic {
 
+class PanelPlacement;
 class RelatedDeckWatcher;
 
 /// A second track table under the library table, with the tracks that go
@@ -45,21 +43,13 @@ class RelatedTracksPanel : public QWidget {
             UserSettingsPointer pConfig,
             KeyboardEventFilter* pKeyboard);
 
-  protected:
-    void showEvent(QShowEvent* pEvent) override;
-    void hideEvent(QHideEvent* pEvent) override;
-    void resizeEvent(QResizeEvent* pEvent) override;
-
   private slots:
-    void slotShowControlChanged(double value);
     void slotUpdateNeeded();
     void slotModeChanged();
-    void slotSplitterMoved();
 
   private:
-    /// Gives the splitter of the skin to the panel, which keeps its height.
+    /// Gives the splitter of the skin to the panel, which keeps its place.
     void setSplitter(QSplitter* pSplitter);
-    void restoreSplitHeight();
     void updateStatusLabel(const DeckTrackList& deckTracks);
 
     const UserSettingsPointer m_pConfig;
@@ -72,12 +62,9 @@ class RelatedTracksPanel : public QWidget {
     parented_ptr<QRadioButton> m_pRelatedButton;
     parented_ptr<QRadioButton> m_pSuggestionsButton;
     parented_ptr<RelatedDeckWatcher> m_pDeckWatcher;
-    std::unique_ptr<ControlProxy> m_pShowControl;
-    QPointer<QSplitter> m_pSplitter;
+    parented_ptr<PanelPlacement> m_pPlacement;
     /// True while the table view holds the model of the panel.
     bool m_modelIsLoaded;
-    /// True while the panel waits for a splitter that has a size.
-    bool m_splitHeightPending;
 };
 
 } // namespace muxic

@@ -1520,6 +1520,7 @@ add_library(
   src/muxic/librarycolumns/trackmetadao.cpp
   src/muxic/librarycolumns/trackmetafields.cpp
   src/muxic/librarycolumns/trackmetapoller.cpp
+  src/muxic/relatedtracks/panelplacement.cpp
   src/muxic/relatedtracks/relateddeckwatcher.cpp
   src/muxic/relatedtracks/relatedtracksfeature.cpp
   src/muxic/relatedtracks/relatedtracksmenu.cpp
@@ -2980,6 +2981,7 @@ if(BUILD_TESTING)
     src/test/mock_networkaccessmanager.cpp
     src/test/musicbrainzrecordingstasktest.cpp
     src/test/muxictrackmetatest.cpp
+    src/test/panelplacement_test.cpp
     src/test/performancetimer_test.cpp
     src/test/playcountertest.cpp
     src/test/playermanagertest.cpp
