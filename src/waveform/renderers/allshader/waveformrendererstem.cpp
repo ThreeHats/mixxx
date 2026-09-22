@@ -12,6 +12,7 @@
 #include "track/track.h"
 #include "util/assert.h"
 #include "util/math.h"
+#include "waveform/renderers/stemwaveformscale.h"
 #include "waveform/renderers/waveformwidgetrenderer.h"
 #include "waveform/waveform.h"
 #include "waveform/waveformwidgetfactory.h"
@@ -176,7 +177,16 @@ bool WaveformRendererStem::preprocessInner() {
     const float stemBreadth = m_splitStemTracks ? breadth / 4.0f : 0;
     const float halfBreadth = (m_splitStemTracks ? stemBreadth : breadth) / 2.0f;
 
-    const float heightFactor = allGain * halfBreadth / m_maxValue;
+    const int stemCount = static_cast<int>(std::min<qsizetype>(
+            stemInfo.size(), mixxx::kMaxSupportedStems));
+    // The four stems sum to the mix, thus one alone is much smaller. One
+    // factor lifts the loudest stem. A lane of the split mode gets none.
+    const float stemScale = m_splitStemTracks
+            ? 1.0f
+            : m_stemTrackScale.scale(data,
+                      dataSize,
+                      waveform->getCompletion(),
+                      stemCount);
 
     // Effective visual frame for x
     double xVisualFrame = qRound(firstVisualFrame / visualIncrementPerPixel) *
@@ -201,6 +211,18 @@ bool WaveformRendererStem::preprocessInner() {
     const double maxSamplingRange = visualIncrementPerPixel / 2.0;
 
     for (int visualIdx = 0; visualIdx < stripLength; visualIdx++) {
+        const int visualFrameStart = std::lround(xVisualFrame - maxSamplingRange);
+        const int visualFrameStop = std::lround(xVisualFrame + maxSamplingRange);
+
+        const int visualIndexStart = std::max(visualFrameStart * 2, 0);
+        const int visualIndexStop =
+                std::min(std::max(visualFrameStop, visualFrameStart + 1) * 2, dataSize - 1);
+
+        const float fVisualIdx = static_cast<float>(visualIdx) * invDevicePixelRatio;
+
+        const mixxx::StemStripPeaks peaks = mixxx::stemStripPeaks(
+                data, visualIndexStart, visualIndexStop, stemCount);
+
         int stemLayer = 0;
         for (int stemIdx : std::as_const(m_stackOrder)) {
             if (stemIdx >= stemInfo.size()) {
@@ -214,49 +236,27 @@ bool WaveformRendererStem::preprocessInner() {
                       color_g = stemColor.greenF(),
                       color_b = stemColor.blueF(),
                       color_a = stemColor.alphaF() * (layerIdx ? m_opacity : m_outlineOpacity);
-                const int visualFrameStart = std::lround(xVisualFrame - maxSamplingRange);
-                const int visualFrameStop = std::lround(xVisualFrame + maxSamplingRange);
 
-                const int visualIndexStart = std::max(visualFrameStart * 2, 0);
-                const int visualIndexStop =
-                        std::min(std::max(visualFrameStop, visualFrameStart + 1) * 2, dataSize - 1);
-
-                const float fVisualIdx = static_cast<float>(visualIdx) * invDevicePixelRatio;
-
-                // Find the max values for current eq in the waveform data.
-                // - Max of left and right
-                uchar u8max{};
-                for (int chn = 0; chn < 2; chn++) {
-                    // data is interleaved left / right
-                    for (int i = visualIndexStart + chn; i < visualIndexStop + chn; i += 2) {
-                        const WaveformData& waveformData = data[i];
-
-                        u8max = math_max(u8max, waveformData.stems[stemIdx]);
-                    }
-                }
-
-                // Cast to float
-                float max = static_cast<float>(u8max) * allGain;
-
-                // Apply the gains
+                // The outline layer shows the whole signal, the main layer
+                // follows the fader and the mute of the stem.
+                float volume = 1.f;
                 if (layerIdx) {
                     if (selectedStems) {
-                        max *= !(selectedStems & 1 << stemIdx)
-                                ? 0.f
-                                : 1.f;
+                        volume = (selectedStems & 1 << stemIdx) ? 1.f : 0.f;
                     } else if (!m_pStemMute.empty() && m_pStemMute[stemIdx]->toBool()) {
-                        max = 0;
-                    } else {
-                        float volume = m_pStemGain.empty()
-                                ? 1.f
-                                : static_cast<float>(m_pStemGain[stemIdx]->get());
-                        max *= volume;
+                        volume = 0.f;
+                    } else if (!m_pStemGain.empty()) {
+                        volume = static_cast<float>(m_pStemGain[stemIdx]->get());
                     }
                 }
 
                 // Lines are thin rectangles
                 // shadow
-                float height = heightFactor * max;
+                float height = mixxx::stemStripHalfHeight(peaks.stems[stemIdx],
+                        stemScale,
+                        volume,
+                        allGain,
+                        halfBreadth);
                 if (m_splitStemTracks) {
                     height = std::min(height, halfBreadth);
                 }

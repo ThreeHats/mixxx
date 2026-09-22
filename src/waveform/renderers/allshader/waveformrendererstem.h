@@ -5,6 +5,7 @@
 #include "rendergraph/geometrynode.h"
 #include "util/class.h"
 #include "waveform/renderers/allshader/waveformrenderersignalbase.h"
+#include "waveform/renderers/stemwaveformscale.h"
 
 class QOpenGLTexture;
 class ControlProxy;
@@ -68,6 +69,8 @@ class allshader::WaveformRendererStem final
     std::vector<std::unique_ptr<ControlProxy>> m_pStemMute;
 
     QVarLengthArray<int, mixxx::kMaxSupportedStems> m_stackOrder;
+
+    mixxx::StemTrackScale m_stemTrackScale;
 
     bool preprocessInner();
 
