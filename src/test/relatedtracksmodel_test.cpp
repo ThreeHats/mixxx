@@ -349,6 +349,9 @@ TEST_F(RelatedDecksModelTest, aTrackOfTwoDecksHasTwoRows) {
     ASSERT_TRUE(shared.isValid());
     relate(deck1, shared, 0);
     relate(deck2, shared, 0);
+    // The track of deck 2 goes with the track of deck 1, but it plays
+    // already, thus it is no track to pick.
+    relate(deck1, deck2, 5);
 
     m_model.selectRelatedToDecks(
             muxic::DeckTrackList{muxic::DeckTrack{1, deck1}, muxic::DeckTrack{2, deck2}});
@@ -359,6 +362,70 @@ TEST_F(RelatedDecksModelTest, aTrackOfTwoDecksHasTwoRows) {
     EXPECT_EQ(shared, rows.at(1).trackId);
     EXPECT_EQ(1, rows.at(0).deckNumber);
     EXPECT_EQ(2, rows.at(1).deckNumber);
+    for (const DeckRow& row : rows) {
+        EXPECT_NE(deck1, row.trackId);
+        EXPECT_NE(deck2, row.trackId);
+    }
+}
+
+TEST_F(RelatedDecksModelTest, aSuggestionOfADeckIsNotATrackOnADeck) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            kReferenceBpm,
+            mixxx::track::io::key::INVALID);
+    const TrackId deck2 = addTrack(QStringLiteral("-jpg.mp3"),
+            kReferenceBpm,
+            mixxx::track::io::key::INVALID);
+    const TrackId free = addTrack(QStringLiteral("-vbr.mp3"),
+            kReferenceBpm,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(free.isValid());
+
+    m_model.selectSuggestedForDecks(
+            muxic::DeckTrackList{muxic::DeckTrack{1, deck1}, muxic::DeckTrack{2, deck2}});
+
+    const QList<DeckRow> rows = deckRows();
+    ASSERT_EQ(2, rows.size());
+    for (const DeckRow& row : rows) {
+        // The two decks hold the same tempo, thus each deck would bring
+        // the track of the other one.
+        EXPECT_EQ(free, row.trackId);
+    }
+}
+
+TEST_F(RelatedDecksModelTest, theExtraColumnsCarryNoCheckBoxAndNoIcon) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId other = addTrack(QStringLiteral("-jpg.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(other.isValid());
+    relate(deck1, other, 4);
+
+    m_model.selectRelatedToDecks(muxic::DeckTrackList{muxic::DeckTrack{1, deck1}});
+    ASSERT_EQ(1, m_model.rowCount());
+
+    const QStringList numberColumns{QStringLiteral("deck_number"),
+            QStringLiteral("relation_rating"),
+            QStringLiteral("relation_count")};
+    const QStringList textColumns{QStringLiteral("relation_type"),
+            QStringLiteral("relation_notes"),
+            QStringLiteral("relation_direction")};
+    for (const QString& columnName : numberColumns + textColumns) {
+        const int column = m_model.fieldIndex(columnName);
+        ASSERT_GE(column, 0) << columnName.toStdString();
+        const QModelIndex index = m_model.index(0, column);
+        // The base class would give the value of the cell for each role.
+        EXPECT_FALSE(m_model.data(index, Qt::CheckStateRole).isValid())
+                << columnName.toStdString();
+        EXPECT_FALSE(m_model.data(index, Qt::DecorationRole).isValid())
+                << columnName.toStdString();
+        const int alignment = m_model.data(index, Qt::TextAlignmentRole).toInt();
+        const int wanted = numberColumns.contains(columnName)
+                ? static_cast<int>(Qt::AlignVCenter | Qt::AlignRight)
+                : static_cast<int>(Qt::AlignVCenter | Qt::AlignLeft);
+        EXPECT_EQ(wanted, alignment) << columnName.toStdString();
+    }
 }
 
 TEST_F(RelatedDecksModelTest, theBestRelationOfADeckComesFirst) {

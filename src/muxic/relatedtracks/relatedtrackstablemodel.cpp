@@ -247,8 +247,14 @@ void RelatedTracksTableModel::setRelationTable(const QString& tableName,
         // table view of the panel shows no sort indicator.
         const int deckColumn = fieldIndex(kDeckNumberColumn);
         setDefaultSort(deckColumn, Qt::AscendingOrder);
-        setSort(deckColumn, Qt::AscendingOrder);
+        if (m_sortedTableName != tableName) {
+            // setSort writes a row of the settings table, thus it runs one
+            // time for each view and not on each deck change.
+            m_sortedTableName = tableName;
+            setSort(deckColumn, Qt::AscendingOrder);
+        }
     } else {
+        m_sortedTableName.clear();
         setDefaultSort(fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_ARTIST),
                 Qt::AscendingOrder);
     }
@@ -358,25 +364,45 @@ void RelatedTracksTableModel::selectSuggestedFor(TrackId trackId) {
     setRelationTable(tableName, viewQuery);
 }
 
+QString RelatedTracksTableModel::formatDeckTrackExclusion() const {
+    // A track that a deck holds is not a track that goes with a deck. Both
+    // deck views leave every loaded track out.
+    QStringList trackIds;
+    for (const DeckTrack& deckTrack : m_deckTracks) {
+        if (deckTrack.trackId.isValid()) {
+            trackIds.append(deckTrack.trackId.toString());
+        }
+    }
+    if (trackIds.isEmpty()) {
+        return QStringLiteral("1");
+    }
+    return QStringLiteral("%1 NOT IN (%2)")
+            .arg(qualified(LIBRARYTABLE_ID), trackIds.join(QChar(',')));
+}
+
 QString RelatedTracksTableModel::formatRelatedToDeckBranch(
         const DeckTrack& deckTrack) const {
     return QStringLiteral(
-            "SELECT %1,%2,%3 FROM " LIBRARY_TABLE ",%4 rel WHERE %5=0 AND (%6)")
+            "SELECT %1,%2,%3 FROM " LIBRARY_TABLE
+            ",%4 rel "
+            "WHERE %5=0 AND %6 AND (%7)")
             .arg(formatTrackColumns(),
                     formatDeckColumns(deckTrack.deckNumber),
                     formatJoinedRelationColumns(),
                     QStringLiteral(TRACK_RELATIONS_TABLE),
                     qualified(LIBRARYTABLE_MIXXXDELETED),
+                    formatDeckTrackExclusion(),
                     formatRelationJoin(deckTrack.trackId));
 }
 
 QString RelatedTracksTableModel::formatSuggestedForDeckBranch(
         const DeckTrack& deckTrack) const {
-    return QStringLiteral("SELECT %1,%2,%3 FROM " LIBRARY_TABLE " WHERE %4")
+    return QStringLiteral("SELECT %1,%2,%3 FROM " LIBRARY_TABLE " WHERE %4 AND %5")
             .arg(formatTrackColumns(),
                     formatDeckColumns(deckTrack.deckNumber),
                     formatEmptyRelationColumns(),
-                    formatSuggestionConditions(deckTrack.trackId));
+                    formatSuggestionConditions(deckTrack.trackId),
+                    formatDeckTrackExclusion());
 }
 
 void RelatedTracksTableModel::selectRelatedToDecks(const DeckTrackList& deckTracks) {
@@ -579,20 +605,37 @@ bool RelatedTracksTableModel::isExtraColumn(int column) const {
 }
 
 QVariant RelatedTracksTableModel::data(const QModelIndex& index, int role) const {
-    if (index.isValid()) {
+    if (index.isValid() && isExtraColumn(index.column())) {
         const int column = index.column();
-        if (role == Qt::CheckStateRole && isExtraColumn(column)) {
-            // The ColumnCache knows no column of this model, thus the base
-            // class gives the value of the cell as a check state.
+        // The ColumnCache knows no column of this model, thus the base class
+        // gives the value of the cell for each role that it answers.
+        switch (role) {
+        case Qt::CheckStateRole:
+        case Qt::DecorationRole:
             return QVariant();
-        }
-        if (column == fieldIndex(kRelationRatingColumn) &&
-                (role == Qt::DisplayRole || role == Qt::EditRole)) {
-            const QVariant value = rawValue(index);
-            if (value.isNull()) {
-                return QVariant();
+        case Qt::TextAlignmentRole:
+            // The cast to int works around a bug like
+            // https://bugreports.qt.io/browse/QTBUG-67582
+            if (column == fieldIndex(kDeckNumberColumn) ||
+                    column == fieldIndex(kRelationRatingColumn) ||
+                    column == fieldIndex(kRelationCountColumn)) {
+                return static_cast<int>(Qt::AlignVCenter | Qt::AlignRight);
             }
-            return QVariant::fromValue(StarRating(value.toInt()));
+            return static_cast<int>(Qt::AlignVCenter | Qt::AlignLeft);
+        case Qt::DisplayRole:
+        case Qt::EditRole:
+            if (column == fieldIndex(kRelationRatingColumn)) {
+                const QVariant value = rawValue(index);
+                if (value.isNull()) {
+                    return QVariant();
+                }
+                return QVariant::fromValue(StarRating(value.toInt()));
+            }
+            break;
+        default:
+            // The colors of a row come from the base class, which reads a
+            // column of the library for them.
+            break;
         }
     }
     return TrackSetTableModel::data(index, role);

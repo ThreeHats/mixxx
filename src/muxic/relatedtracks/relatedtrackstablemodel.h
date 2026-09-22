@@ -115,6 +115,8 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
     bool writeRelationColumn(const QModelIndex& index, const QVariant& value);
     /// The WHERE of the tracks that fit the tempo and the key of the track.
     QString formatSuggestionConditions(TrackId trackId) const;
+    /// The WHERE that leaves out each track that a deck holds.
+    QString formatDeckTrackExclusion() const;
     /// The SELECT of one deck of a view that shows the relations.
     QString formatRelatedToDeckBranch(const DeckTrack& deckTrack) const;
     /// The SELECT of one deck of a view that shows the suggestions.
@@ -124,6 +126,8 @@ class RelatedTracksTableModel final : public TrackSetTableModel {
     TrackId m_referenceTrackId;
     /// The decks of the last select in a deck mode.
     DeckTrackList m_deckTracks;
+    /// The view that holds the order of a deck mode.
+    QString m_sortedTableName;
     /// The text of the last CREATE VIEW of each view name. A view only has
     /// to go and come back when its text changes.
     QHash<QString, QString> m_viewQueries;

@@ -16,6 +16,9 @@ class RelationRatingDelegate : public StarDelegate {
     void paintItem(QPainter* pPainter,
             const QStyleOptionViewItem& option,
             const QModelIndex& index) const override;
+
+  protected slots:
+    void cellEntered(const QModelIndex& index) override;
 };
 
 } // namespace muxic
