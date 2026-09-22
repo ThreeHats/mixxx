@@ -1,13 +1,15 @@
+#include <dsp/tempotracking/DownBeat.h>
 #include <gtest/gtest.h>
 
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <cstdio>
-#include <dsp/tempotracking/DownBeat.h>
 #include <vector>
 
 #include "analyzer/plugins/analyzerqueenmarybeats.h"
 #include "muxic/downbeats/downbeatdetector.h"
+#include "muxic/downbeats/externaldownbeatdetector.h"
 #include "sources/soundsourceproxy.h"
 #include "test/mixxxtest.h"
 #include "track/track.h"
@@ -16,7 +18,8 @@
 namespace {
 
 // A probe on real audio files: MUXIC_DOWNBEAT_PROBE names a directory of
-// files. The test skips when the variable is absent.
+// files. MUXIC_DOWNBEAT_COMMAND names a command template for the external
+// detector. The test skips when the first variable is absent.
 class DownbeatProbeTest : public MixxxTest {};
 
 TEST_F(DownbeatProbeTest, RealTracks) {
@@ -24,6 +27,7 @@ TEST_F(DownbeatProbeTest, RealTracks) {
     if (dir.isEmpty()) {
         GTEST_SKIP() << "MUXIC_DOWNBEAT_PROBE is not set";
     }
+    const QString command = qEnvironmentVariable("MUXIC_DOWNBEAT_COMMAND");
     SoundSourceProxy::registerProviders();
     const QStringList files = QDir(dir).entryList(QDir::Files, QDir::Name);
     for (const QString& name : files) {
@@ -177,6 +181,37 @@ TEST_F(DownbeatProbeTest, RealTracks) {
         }
         std::printf("  energy step at beat by phase: %.3g %.3g %.3g %.3g\n",
                 step[0], step[1], step[2], step[3]);
+
+        if (command.isEmpty()) {
+            continue;
+        }
+        mixxx::ExternalDownbeatSettings settings;
+        settings.setDetector(mixxx::DownbeatDetectorChoice::ExternalCommand);
+        settings.setCommand(command);
+        settings.setTimeoutSeconds(600);
+        mixxx::ExternalDownbeatDetector external(settings, 4);
+        QElapsedTimer runTimer;
+        runTimer.start();
+        const mixxx::DownbeatPhase externalPhase =
+                external.detect(path, positions, sampleRate);
+        const qint64 elapsed = runTimer.elapsed();
+        const std::vector<int>& externalVotes = external.votes();
+        std::printf(
+                "  external: accepted %d phase %d confidence %.3f "
+                "downbeats %d in %lld ms %s\n",
+                externalPhase.accepted ? 1 : 0,
+                externalPhase.phase,
+                externalPhase.confidence,
+                external.downbeatCount(),
+                static_cast<long long>(elapsed),
+                qPrintable(external.errorMessage()));
+        if (externalVotes.size() == 4) {
+            std::printf("  external votes by phase: %d %d %d %d\n",
+                    externalVotes[0],
+                    externalVotes[1],
+                    externalVotes[2],
+                    externalVotes[3]);
+        }
     }
 }
 

@@ -170,6 +170,7 @@ DownbeatPhase ExternalDownbeatDetector::detect(const QString& trackFilePath,
         audio::SampleRate sampleRate) {
     m_errorMessage.clear();
     m_downbeatCount = 0;
+    m_votes.clear();
     if (beatPositions.size() < DownbeatDetector::kMinBeats) {
         m_errorMessage = QObject::tr("The track has too few beats.");
         return DownbeatPhase();
@@ -186,8 +187,8 @@ DownbeatPhase ExternalDownbeatDetector::detect(const QString& trackFilePath,
     }
     const std::vector<int> indices =
             mapTimesToBeats(times, beatPositions, sampleRate);
-    const std::vector<int> votes = barPhaseVotes(indices, m_beatsPerBar);
-    const DownbeatPhase phase = DownbeatDetector::scoreVotes(votes);
+    m_votes = barPhaseVotes(indices, m_beatsPerBar);
+    const DownbeatPhase phase = DownbeatDetector::scoreVotes(m_votes);
     if (!phase.accepted) {
         m_errorMessage = QObject::tr(
                 "The downbeats of the command do not fit the beat grid.");

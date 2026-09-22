@@ -130,7 +130,7 @@ The program must write one line for each beat, with the time in seconds and the 
            <string> s</string>
           </property>
           <property name="minimum">
-           <number>5</number>
+           <number>1</number>
           </property>
           <property name="maximum">
            <number>3600</number>

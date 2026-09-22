@@ -110,6 +110,12 @@ class ExternalDownbeatDetector {
         return m_downbeatCount;
     }
 
+    /// The vote histogram of the last run, one count for each place of the
+    /// bar. It is empty when the command gave nothing.
+    const std::vector<int>& votes() const {
+        return m_votes;
+    }
+
   private:
     /// The detector asks this often whether the caller cancelled the work.
     static constexpr int kPollMilliseconds = 200;
@@ -123,6 +129,7 @@ class ExternalDownbeatDetector {
     std::function<bool()> m_cancelCheck;
     QString m_errorMessage;
     int m_downbeatCount;
+    std::vector<int> m_votes;
 };
 
 /// What the detectors of one track found.
