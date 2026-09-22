@@ -2947,6 +2947,7 @@ if(BUILD_TESTING)
     src/test/directorydaotest.cpp
     src/test/downbeatdetector_test.cpp
     src/test/downbeatengine_test.cpp
+    src/test/downbeatprobe_test.cpp
     src/test/duration_test.cpp
     src/test/durationutiltest.cpp
     #TODO: write useful tests for refactored effects system
@@ -4842,6 +4843,7 @@ target_include_directories(
   PUBLIC lib/qm-dsp lib/qm-dsp/include
 )
 target_link_libraries(mixxx-lib PRIVATE QueenMaryDsp)
+target_link_libraries(mixxx-test PRIVATE QueenMaryDsp)
 
 # ReplayGain
 add_library(ReplayGain STATIC EXCLUDE_FROM_ALL lib/replaygain/replaygain.cpp)
