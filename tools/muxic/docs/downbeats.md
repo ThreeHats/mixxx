@@ -36,7 +36,7 @@ Result: **the beat grid of upstream cannot carry a downbeat today.**
 | Number | State | Author | What it does |
 |---|---|---|---|
 | 14835 | open | alephlm | Adds `optional int32 downbeats_offset = 3` to the `BeatGrid` message, carries it through `Beats`, adds two controls and an allshader waveform renderer |
-| 16491 | open | ronso0 | Takes the `intro_start` cue as the first downbeat. No storage. Draws the bar lines in the allshader beat renderer with a second colour |
+| 16491 | open | ronso0 | Takes the `intro_start` cue as the first downbeat. No storage. Draws the bar lines in the allshader beat renderer with a second color |
 | 16978 | open | alephlm | Same drawing as 16491, plus a preference and a track menu item. Adds a `res/schema.xml` revision and a `library` column |
 | 16977, 17080 | closed | alephlm | Earlier tries of 16491 |
 | 12343 | closed | fwcd | Beat grid editing controls and downbeat lines on the scrolling waveform, on the old `Beats` model |
@@ -111,8 +111,9 @@ backend later. This work does not build that path.
    loses the phase but reads the grid.
 3. **The detector is the qm-dsp bar tracker.** The fork drives
    `DownBeat::findDownBeats` and then scores the phases again from
-   `DownBeat::getBeatSD()` to get a confidence. The scoring is the fork's own
-   code, thus a test can measure it.
+   `DownBeat::getBeatSD()`. The scoring is the fork's own code, thus a test
+   can measure it, and it takes a phase only when the vote passes a
+   significance test.
 4. **4/4 only.** Beats per bar is 4 for every detected track. The storage
    holds another value, and the controls keep it, but nothing writes another
    value yet.
@@ -126,15 +127,20 @@ message BeatGrid {
   optional Bpm bpm = 1;
   optional Beat first_beat = 2;
   optional int32 downbeats_offset = 3;
-  optional int32 beats_per_bar = 4;
+  optional int32 beats_per_bar = 100;
 }
 
 message BeatMap {
   repeated Beat beat = 1;
-  optional int32 downbeats_offset = 2;
-  optional int32 beats_per_bar = 3;
+  optional int32 downbeats_offset = 100;
+  optional int32 beats_per_bar = 101;
 }
 ```
+
+`BeatGrid.downbeats_offset` takes the number 3 of upstream pull request
+14835, thus the fork reads what that work writes. The other three fields are
+of this fork alone. They start at 100, where a later upstream field cannot
+meet them and read a fork value as its own.
 
 `downbeats_offset` is the place of the first downbeat, counted in beats from
 the anchor beat of the grid. The anchor beat is the beat at the first marker,
@@ -169,26 +175,49 @@ The code is in `src/muxic/downbeats/`.
 `DownbeatDetector` takes the audio of the analyzer in the blocks that the
 analyzer gives, mixes it to mono, and hands blocks of 1024 frames to the
 qm-dsp `DownBeat` class, which decimates them by 16 and buffers them. A ten
-minute track costs near 7 MB of memory during the analysis.
+minute track at 44.1 kHz holds 8.4 MB of decimated audio, and the buffer
+doubles when it is full, thus the peak is 12.6 MB. A twenty minute track
+costs twice that. The memory goes back when the analysis of the track ends.
 
 When the beat analysis is over, `AnalyzerBeats::storeResults()` calls
-`finalize()` with the new beat grid. The detector then:
+`finalize()` with the beat position list of the beat plugin, which is the
+same list that builds the grid. The detector then:
 
-1. lists the beat positions of the whole track,
+1. cuts the list where the buffered audio ends,
 2. calls `DownBeat::findDownBeats`, which fills the beat spectral difference
    list,
 3. reads that list with `getBeatSD()`,
 4. takes the mean difference of each of the four phase candidates, and takes
    the largest one as the phase,
 5. counts, for each bar, which of the four transitions had the largest
-   difference, and takes the part of the bars that voted for the winner,
-6. maps that part to a confidence: `(part - 1/4) / (1 - 1/4)`.
+   difference, and counts the bars that voted for the winner.
 
-A confidence of 0 means that every phase is equal, which is what a signal
-with no bar structure gives. A confidence of 1 means that every bar voted for
-the same phase. The detector keeps the phase when the confidence is at least
-`kMinConfidence` (0.10) and when the track has at least 16 beats. Below that
-it reports nothing, and the grid keeps no phase.
+### Why a vote share is not enough
+
+A share of the votes says nothing by itself. With no bar structure each bar
+votes for the winner with the chance 1/4, thus a track of 16 bars reaches a
+large share often. A measurement on flat input showed that a rule of "a
+share over 0.10 above chance" took a phase 91 percent of the time at 16
+beats and 26 percent of the time at 256 beats. A wrong phase is worse than
+none, because the relay keeps the manual downbeat only while the bar is
+unknown.
+
+The votes follow a binomial law with the chance 1/4 under no bar structure.
+The detector takes the phase only when
+
+```
+votes >= bars / 4 + 3 * sqrt(bars * 3 / 16)
+```
+
+which is three standard deviations over the mean of that law. On flat input
+this takes a phase about once in a hundred tracks, at every track length. A
+track needs at least 64 beats, which are 16 bars; a shorter track gets no
+phase at all.
+
+The detector also reports a confidence, which is the part of the bars that
+voted for the winner after the quarter that chance gives:
+`(part - 1/4) / (1 - 1/4)`. It goes to the log and to the tests. It is a
+report, not the rule.
 
 ### The limits
 
@@ -197,10 +226,14 @@ it reports nothing, and the grid keeps no phase.
   middle keeps the phase of the majority.
 - The method needs a spectral change at the bar line. Electronic dance music
   gives that change. A track with a flat texture, a live recording with a
-  free tempo, or an ambient track gives a low confidence.
-- The detector needs a beat grid. It runs with the beat analysis. A track
-  that Mixxx analyzed before this fork keeps no phase until the user runs
-  **Reanalyze** on it.
+  free tempo, or an ambient track gets no phase.
+- A track under 64 beats gets no phase. At 128 beats per minute that is a
+  track under 30 seconds.
+- The detector needs the beats of the analysis. It runs with the beat
+  analysis. A track that Mixxx analyzed before this fork keeps no phase until
+  the user runs **Reanalyze** on it.
+- A beat plugin that reports no beat positions, such as SoundTouch, gets no
+  downbeat step at all.
 - Fast analysis reads only the first minute of a track. The phase then comes
   from that minute.
 
@@ -215,9 +248,10 @@ it reports nothing, and the grid keeps no phase.
 | `[ChannelN],beats_downbeat_later` | Moves the bar phase one beat later |
 | `[ChannelN],beat_in_bar` | Read only. The place of the beat that plays in its bar, 1 to 4. 0 means that the phase is unknown |
 
-The three buttons write the beat grid of the track, thus they need no lock
-on the track and they work while the deck plays. A track with a BPM lock or
-with no beat grid does not take them.
+The three buttons write the beat grid of the track, thus they take the lock
+of the track. They run on the thread of the GUI or of the controller, where
+that lock is safe, and they work while the deck plays. A track with a BPM
+lock or with no beat grid does not take them.
 
 `beat_in_bar` changes on each beat while the deck plays. It also changes
 after a seek, after a loop wrap and after a load. It is 0 while the deck
@@ -235,19 +269,19 @@ above.
 
 ## The waveform
 
-The scrolling waveform draws a downbeat line with the beat colour of the
-skin at full alpha, and a normal beat line with the same colour at 60 per
-cent of that alpha. The bar line is thus stronger, and no skin file changes.
-A track with no bar phase keeps the alpha of the skin on every line, thus it
-looks as it did before.
+The scrolling waveform makes the bar line stronger than the beat line, with
+the beat color of the skin. No skin file changes.
+
+- `allshader/waveformrenderbeat.cpp`, the renderer of every OpenGL waveform
+  type and thus the default, draws the bar line at the alpha of the skin and
+  the beat line at 60 percent of it.
+- `renderers/waveformrenderbeat.cpp`, the QPainter renderer of the Software,
+  HSV and RGB waveform types, draws the bar line twice as wide. It cannot use
+  alpha: `drawLines` with an alpha under 1 paints one large rectangle on the
+  QOpenGLWindow, which is why that renderer forces the alpha to 1.
+
+A track with no bar phase looks as it did before in both renderers.
 The overview does not draw bar lines.
-
-The fork covers the two renderers that a Mixxx build uses:
-
-- `src/waveform/renderers/allshader/waveformrenderbeat.cpp`, which every
-  OpenGL waveform type uses. This is the default.
-- `src/waveform/renderers/waveformrenderbeat.cpp`, the QPainter renderer of
-  the software waveform types.
 
 ## The OSC message
 
@@ -268,8 +302,18 @@ The beat message grows by one argument:
 The first four arguments do not change. A reader that takes only four
 arguments keeps working.
 
-`beat_in_bar` is also in the default publish list, thus
-`/mixxx/ChannelN/beat_in_bar` goes out as a float on each change.
+`beat_in_bar` is also in the **default** publish list, thus a new profile
+sends `/mixxx/ChannelN/beat_in_bar` as a float on each change. Mixxx writes
+`osc-publish.conf` only when the file is absent, thus a rig that already ran
+this fork keeps its old list. Add this line to
+`~/.mixxx/osc-publish.conf` by hand, under the other `[ChannelN]` lines:
+
+```
+[ChannelN] beat_in_bar
+```
+
+The beat message carries the bar in any case, because it does not come from
+the publish list.
 
 ## How the muxic rig uses it
 
@@ -288,8 +332,8 @@ decks send two bar phases.
 
 ## What is not done
 
-- No bar quantisation. A loop on the bar, a beat jump by bars and a cue
-  quantised to the bar are out of scope. The stored phase is what those
+- No bar quantization. A loop on the bar, a beat jump by bars and a cue
+  quantized to the bar are out of scope. The stored phase is what those
   features would need.
 - No time signature other than 4/4. Nothing writes `beats_per_bar` with
   another value.
