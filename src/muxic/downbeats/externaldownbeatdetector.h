@@ -28,7 +28,7 @@ class ExternalDownbeatSettings {
 
     /// The seconds that the command may run before the detector kills it.
     static constexpr int kDefaultTimeoutSeconds = 120;
-    static constexpr int kMinTimeoutSeconds = 5;
+    static constexpr int kMinTimeoutSeconds = 1;
     static constexpr int kMaxTimeoutSeconds = 3600;
 
     static QString defaultCommand();
@@ -124,5 +124,25 @@ class ExternalDownbeatDetector {
     QString m_errorMessage;
     int m_downbeatCount;
 };
+
+/// What the detectors of one track found.
+struct DownbeatResult {
+    DownbeatPhase phase;
+    /// The detector that gave `phase`. It is empty when none ran.
+    QString source;
+    /// Why the external command gave no phase. It is empty when the command
+    /// did not run or when it found one.
+    QString message;
+};
+
+/// Run the detectors in their order: the external command first when the
+/// settings choose it, then `builtIn`. An empty `builtIn` means that no
+/// built in detector holds the audio of this track.
+DownbeatResult runDownbeatDetectors(const ExternalDownbeatSettings& settings,
+        const QString& trackFilePath,
+        const QVector<audio::FramePos>& beatPositions,
+        audio::SampleRate sampleRate,
+        const std::function<bool()>& cancelCheck,
+        const std::function<DownbeatPhase()>& builtIn);
 
 } // namespace mixxx

@@ -160,7 +160,9 @@ DownbeatPhase DownbeatDetector::scoreVotes(const std::vector<int>& votes, int ph
             best = candidate;
         }
     }
-    if (bars == 0) {
+    // A handful of bars says nothing, and the binomial law below is a poor
+    // fit there. The built in path keeps this bound with kMinBeats already.
+    if (bars * beatsPerBar < kMinBeats) {
         return result;
     }
     result.phase = (phase >= 0 && phase < beatsPerBar) ? phase : best;

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "track/beats.h"
 #include "util/assert.h"
 #include "util/commandtemplate.h"
 
@@ -192,6 +193,30 @@ DownbeatPhase ExternalDownbeatDetector::detect(const QString& trackFilePath,
                 "The downbeats of the command do not fit the beat grid.");
     }
     return phase;
+}
+
+DownbeatResult runDownbeatDetectors(const ExternalDownbeatSettings& settings,
+        const QString& trackFilePath,
+        const QVector<audio::FramePos>& beatPositions,
+        audio::SampleRate sampleRate,
+        const std::function<bool()>& cancelCheck,
+        const std::function<DownbeatPhase()>& builtIn) {
+    DownbeatResult result;
+    if (settings.detector() == DownbeatDetectorChoice::ExternalCommand) {
+        ExternalDownbeatDetector detector(settings, BarPhase::kDefaultBeatsPerBar);
+        detector.setCancelCheck(cancelCheck);
+        result.phase = detector.detect(trackFilePath, beatPositions, sampleRate);
+        result.source = QStringLiteral("external");
+        result.message = detector.errorMessage();
+        if (result.phase.accepted) {
+            return result;
+        }
+    }
+    if (builtIn) {
+        result.phase = builtIn();
+        result.source = QStringLiteral("built in");
+    }
+    return result;
 }
 
 bool ExternalDownbeatDetector::runCommand(const QString& trackFilePath, QString* pOutput) {

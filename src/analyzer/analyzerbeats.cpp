@@ -358,34 +358,30 @@ mixxx::BeatsPointer AnalyzerBeats::detectDownbeat(const TrackPointer& pTrack,
         const mixxx::BeatsPointer& pBeats,
         const QVector<mixxx::audio::FramePos>& beatPositions) {
     const QString location = pTrack->getLocation();
-    mixxx::DownbeatPhase phase;
-    QString source;
-    if (m_downbeatSettings.detector() ==
-            mixxx::DownbeatDetectorChoice::ExternalCommand) {
-        mixxx::ExternalDownbeatDetector detector(
-                m_downbeatSettings, mixxx::BarPhase::kDefaultBeatsPerBar);
-        detector.setCancelCheck(m_cancelCheck);
-        phase = detector.detect(location, beatPositions, m_sampleRate);
-        source = QStringLiteral("external");
-        if (!phase.accepted) {
-            qWarning() << "muxic downbeat: the external command gave no phase for"
-                       << location << ":" << detector.errorMessage();
-        }
+    std::function<mixxx::DownbeatPhase()> builtIn;
+    if (m_pDownbeatDetector) {
+        builtIn = [this, &beatPositions]() {
+            return m_pDownbeatDetector->finalize(beatPositions);
+        };
     }
-    if (!phase.accepted && m_pDownbeatDetector) {
-        phase = m_pDownbeatDetector->finalize(beatPositions);
-        source = QStringLiteral("built in");
-    }
-    if (source.isEmpty()) {
+    const mixxx::DownbeatResult result = mixxx::runDownbeatDetectors(
+            m_downbeatSettings,
+            location,
+            beatPositions,
+            m_sampleRate,
+            m_cancelCheck,
+            builtIn);
+    if (result.source.isEmpty()) {
         return pBeats;
     }
-    qDebug() << "muxic downbeat:" << location << "source" << source
-             << "accepted" << phase.accepted << "phase" << phase.phase
-             << "confidence" << phase.confidence;
-    if (!phase.accepted || phase.phase >= beatPositions.size()) {
+    qDebug() << "muxic downbeat:" << location << "source" << result.source
+             << "accepted" << result.phase.accepted << "phase" << result.phase.phase
+             << "confidence" << result.phase.confidence << result.message;
+    if (!result.phase.accepted || result.phase.phase >= beatPositions.size()) {
         return pBeats;
     }
-    const auto pWithBarPhase = pBeats->trySetDownbeatNear(beatPositions.at(phase.phase));
+    const auto pWithBarPhase =
+            pBeats->trySetDownbeatNear(beatPositions.at(result.phase.phase));
     return pWithBarPhase ? *pWithBarPhase : pBeats;
 }
 

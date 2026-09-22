@@ -67,7 +67,8 @@ class DownbeatDetector {
     /// with the most votes win. Under no bar structure the votes for one
     /// phase follow a binomial law with the chance 1 / beats of a bar, thus
     /// the result counts as found only when the votes stand `kSigmaFactor`
-    /// standard deviations over that chance.
+    /// standard deviations over that chance. Fewer than `kMinBeats` beats of
+    /// bars give no phase at all.
     static DownbeatPhase scoreVotes(const std::vector<int>& votes, int phase = -1);
 
   private:
