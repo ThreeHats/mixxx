@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QProcess>
 #include <QString>
 #include <QVector>
 #include <functional>
@@ -8,6 +9,7 @@
 #include "audio/frame.h"
 #include "audio/types.h"
 #include "muxic/downbeats/downbeatdetector.h"
+#include "preferences/beatdetectionsettings.h"
 #include "preferences/usersettings.h"
 
 namespace mixxx {
@@ -18,18 +20,18 @@ enum class DownbeatDetectorChoice {
     ExternalCommand,
 };
 
-/// The user settings of the external downbeat command.
+/// The user settings of the external downbeat command. They live in the
+/// group `[BPM]`, next to the downbeat checkbox.
 class ExternalDownbeatSettings {
   public:
-    static const QString kConfigGroup;
-    static const QString kCommandItem;
-    static const QString kTimeoutItem;
-    static const QString kDetectorItem;
-
     /// The seconds that the command may run before the detector kills it.
     static constexpr int kDefaultTimeoutSeconds = 120;
     static constexpr int kMinTimeoutSeconds = 1;
     static constexpr int kMaxTimeoutSeconds = 3600;
+    /// The commands that run at one time. One card holds one model well.
+    static constexpr int kDefaultJobs = 1;
+    static constexpr int kMinJobs = 1;
+    static constexpr int kMaxJobs = 32;
 
     static QString defaultCommand();
 
@@ -55,9 +57,15 @@ class ExternalDownbeatSettings {
         m_detector = detector;
     }
 
+    int jobs() const {
+        return m_jobs;
+    }
+    void setJobs(int jobs);
+
   private:
     QString m_command = defaultCommand();
     int m_timeoutSeconds = kDefaultTimeoutSeconds;
+    int m_jobs = kDefaultJobs;
     DownbeatDetectorChoice m_detector = DownbeatDetectorChoice::BuiltIn;
 };
 
@@ -67,12 +75,18 @@ class ExternalDownbeatSettings {
 /// place 1. A line that does not follow that form is skipped.
 std::vector<double> parseDownbeatTimes(const QString& output);
 
+/// A downbeat may stand this part of the beat period away from the beat of
+/// the grid. A downbeat farther away belongs to another grid.
+constexpr double kBeatToleranceFraction = 0.25;
+
 /// The place in `beatPositions` of the beat nearest to each time of `times`.
-/// A time before the first beat or after the last one is dropped. The list
+/// A time before the first beat, after the last one, or farther from its
+/// nearest beat than `tolerance` of the beat period is dropped. The list
 /// comes back sorted, and it can hold the same place twice.
 std::vector<int> mapTimesToBeats(const std::vector<double>& times,
         const QVector<audio::FramePos>& beatPositions,
-        audio::SampleRate sampleRate);
+        audio::SampleRate sampleRate,
+        double tolerance = kBeatToleranceFraction);
 
 /// Count the beats of `beatIndices` in each place of the bar.
 std::vector<int> barPhaseVotes(const std::vector<int>& beatIndices, int beatsPerBar);
@@ -121,8 +135,19 @@ class ExternalDownbeatDetector {
     static constexpr int kPollMilliseconds = 200;
     /// The program must start in this time.
     static constexpr int kStartMilliseconds = 10000;
+    /// A killed program gets this long to die before the kill is harder.
+    static constexpr int kKillMilliseconds = 2000;
+    /// A program that reports more downbeats than this part of the bars of
+    /// the track counted another tempo.
+    static constexpr double kMaxDownbeatsPerBar = 1.5;
 
     bool runCommand(const QString& trackFilePath, QString* pOutput);
+    bool waitForStart(QProcess* pProcess);
+    /// Stop the program and everything that it started.
+    void killProcessGroup(QProcess* pProcess);
+    bool cancelled() const {
+        return m_cancelCheck && m_cancelCheck();
+    }
 
     const ExternalDownbeatSettings m_settings;
     const int m_beatsPerBar;

@@ -137,6 +137,28 @@ The program must write one line for each beat, with the time in seconds and the 
           </property>
          </widget>
         </item>
+        <item row="3" column="0">
+         <widget class="QLabel" name="labelDownbeatJobs">
+          <property name="text">
+           <string>Commands at one time:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="1">
+         <widget class="QSpinBox" name="spinBoxDownbeatJobs">
+          <property name="toolTip">
+           <string>How many downbeat commands may run together.
+Each analyzer thread runs its own command, and a model on a graphics card wants the card for itself.
+Keep this at 1 unless the card holds more than one model.</string>
+          </property>
+          <property name="minimum">
+           <number>1</number>
+          </property>
+          <property name="maximum">
+           <number>32</number>
+          </property>
+         </widget>
+        </item>
        </layout>
       </item>
       <item>

@@ -64,12 +64,17 @@ class DownbeatDetector {
     /// Apply the significance test to a vote histogram. `votes[p]` counts the
     /// bars that called the phase `p` the first beat of the bar, and the size
     /// of the list is the beats of a bar. A phase below zero lets the phase
-    /// with the most votes win. Under no bar structure the votes for one
-    /// phase follow a binomial law with the chance 1 / beats of a bar, thus
-    /// the result counts as found only when the votes stand `kSigmaFactor`
-    /// standard deviations over that chance. Fewer than `kMinBeats` beats of
-    /// bars give no phase at all.
-    static DownbeatPhase scoreVotes(const std::vector<int>& votes, int phase = -1);
+    /// with the most votes win. `maxBars` caps the trials at the bars that
+    /// the track holds; a value below zero takes the votes as they are.
+    /// Fewer than `kMinBeats / beats of a bar` bars give no phase, because
+    /// the law below fits a handful of trials badly.
+    ///
+    /// Under no bar structure the votes for one phase follow a binomial law
+    /// with the chance 1 / beats of a bar, thus the result counts as found
+    /// only when the votes stand `kSigmaFactor` standard deviations over that
+    /// chance AND no second phase reaches the same mark.
+    static DownbeatPhase scoreVotes(
+            const std::vector<int>& votes, int phase = -1, int maxBars = -1);
 
   private:
     /// The frames that one block carries. The bar tracker needs blocks of one

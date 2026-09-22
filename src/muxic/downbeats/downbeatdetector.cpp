@@ -143,7 +143,8 @@ DownbeatPhase DownbeatDetector::scorePhases(
 }
 
 // static
-DownbeatPhase DownbeatDetector::scoreVotes(const std::vector<int>& votes, int phase) {
+DownbeatPhase DownbeatDetector::scoreVotes(
+        const std::vector<int>& votes, int phase, int maxBars) {
     DownbeatPhase result;
     const int beatsPerBar = static_cast<int>(votes.size());
     if (beatsPerBar < 2) {
@@ -160,9 +161,22 @@ DownbeatPhase DownbeatDetector::scoreVotes(const std::vector<int>& votes, int ph
             best = candidate;
         }
     }
-    // A handful of bars says nothing, and the binomial law below is a poor
-    // fit there. The built in path keeps this bound with kMinBeats already.
-    if (bars * beatsPerBar < kMinBeats) {
+    if (bars == 0) {
+        return result;
+    }
+
+    // A program that counts a tempo of its own reports more downbeats than
+    // the track has bars. Those votes are not one trial for each bar. The
+    // cap holds the trials at the bars of the track.
+    double trials = bars;
+    double scale = 1.0;
+    if (maxBars > 0 && bars > maxBars) {
+        trials = maxBars;
+        scale = trials / bars;
+    }
+    // A handful of bars says nothing, and the binomial law below fits such a
+    // count badly. The built in path keeps this bound with kMinBeats already.
+    if (trials < kMinBeats / beatsPerBar) {
         return result;
     }
     result.phase = (phase >= 0 && phase < beatsPerBar) ? phase : best;
@@ -173,11 +187,23 @@ DownbeatPhase DownbeatDetector::scoreVotes(const std::vector<int>& votes, int ph
     // chance. The phase counts as found only when the votes stand
     // `kSigmaFactor` standard deviations over the mean of that law.
     const double chance = 1.0 / beatsPerBar;
-    const double mean = bars * chance;
-    const double deviation = std::sqrt(bars * chance * (1.0 - chance));
+    const double mean = trials * chance;
+    const double deviation = std::sqrt(trials * chance * (1.0 - chance));
+    const double threshold = mean + kSigmaFactor * deviation;
+
+    // Two phases over the mark mean that the two grids walk apart. One of
+    // the phases is wrong, and a wrong bar is worse than no bar.
+    double runnerUp = 0.0;
+    for (int candidate = 0; candidate < beatsPerBar; candidate++) {
+        if (candidate == result.phase) {
+            continue;
+        }
+        runnerUp = std::max(runnerUp, votes[candidate] * scale);
+    }
+
     const double part = static_cast<double>(votes[result.phase]) / bars;
     result.confidence = std::clamp((part - chance) / (1.0 - chance), 0.0, 1.0);
-    result.accepted = votes[result.phase] >= mean + kSigmaFactor * deviation;
+    result.accepted = votes[result.phase] * scale >= threshold && runnerUp < threshold;
     return result;
 }
 

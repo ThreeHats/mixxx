@@ -2939,6 +2939,7 @@ if(BUILD_TESTING)
     src/test/controlobjectscripttest.cpp
     src/test/controlpotmetertest.cpp
     src/test/coreservicestest.cpp
+    src/test/commandtemplate_test.cpp
     src/test/coverartcache_test.cpp
     src/test/coverartutils_test.cpp
     src/test/cratestorage_test.cpp

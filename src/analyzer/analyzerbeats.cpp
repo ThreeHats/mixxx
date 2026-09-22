@@ -31,8 +31,8 @@ mixxx::AnalyzerPluginInfo AnalyzerBeats::defaultPlugin() {
 }
 
 AnalyzerBeats::AnalyzerBeats(UserSettingsPointer pConfig, bool enforceBpmDetection)
-        : m_bpmSettings(pConfig),
-          m_downbeatSettings(mixxx::ExternalDownbeatSettings::readFrom(pConfig)),
+        : m_pConfig(pConfig),
+          m_bpmSettings(pConfig),
           m_enforceBpmDetection(enforceBpmDetection),
           m_bPreferencesReanalyzeOldBpm(false),
           m_bPreferencesReanalyzeImported(false),
@@ -69,6 +69,10 @@ bool AnalyzerBeats::initialize(const AnalyzerTrack& track,
         return false;
     }
 
+    // The command template, the timeout and the jobs come from the settings
+    // of this moment, thus a change reaches the next track of a running job.
+    m_downbeatSettings = mixxx::ExternalDownbeatSettings::readFrom(m_pConfig);
+
     if (m_downbeatOnly) {
         // The grid stays. The detector works against the beats that the
         // track has, thus a track with no grid has nothing to work with.
@@ -81,8 +85,13 @@ bool AnalyzerBeats::initialize(const AnalyzerTrack& track,
         m_channelCount = channelCount;
         m_maxFramesToProcess = frameLength;
         m_currentFrame = 0;
-        m_pDownbeatDetector = std::make_unique<mixxx::DownbeatDetector>(
-                m_sampleRate, mixxx::BarPhase::kDefaultBeatsPerBar);
+        // The command reads the track file, thus the built in detector, its
+        // buffer of decimated audio and the mix to mono are work for nothing
+        // while the command is the choice. There is no fallback then.
+        if (m_downbeatSettings.detector() != mixxx::DownbeatDetectorChoice::ExternalCommand) {
+            m_pDownbeatDetector = std::make_unique<mixxx::DownbeatDetector>(
+                    m_sampleRate, mixxx::BarPhase::kDefaultBeatsPerBar);
+        }
         return true;
     }
 
@@ -233,6 +242,11 @@ bool AnalyzerBeats::processSamples(const CSAMPLE* pIn, SINT count) {
     VERIFY_OR_DEBUG_ASSERT(m_pPlugin || m_downbeatOnly) {
         return false;
     }
+    if (!m_pPlugin && !m_pDownbeatDetector) {
+        // The external command reads the track file. Nothing here wants the
+        // samples, thus the mix to mono and its buffer do not happen.
+        return true;
+    }
 
     SINT numFrames = count / m_channelCount;
     const CSAMPLE* pBeatInput = pIn;
@@ -377,7 +391,9 @@ mixxx::BeatsPointer AnalyzerBeats::detectDownbeat(const TrackPointer& pTrack,
     }
     qDebug() << "muxic downbeat:" << location << "source" << result.source
              << "accepted" << result.phase.accepted << "phase" << result.phase.phase
-             << "confidence" << result.phase.confidence << result.message;
+             << "confidence" << result.phase.confidence
+             << (builtIn ? QString() : QStringLiteral("no fallback"))
+             << result.message;
     if (!result.phase.accepted || result.phase.phase >= beatPositions.size()) {
         return pBeats;
     }

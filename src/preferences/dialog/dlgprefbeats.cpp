@@ -105,10 +105,17 @@ DlgPrefBeats::DlgPrefBeats(QWidget* parent, UserSettingsPointer pConfig)
             [this](int seconds) {
                 m_downbeatSettings.setTimeoutSeconds(seconds);
             });
+    connect(spinBoxDownbeatJobs,
+            QOverload<int>::of(&QSpinBox::valueChanged),
+            this,
+            [this](int jobs) {
+                m_downbeatSettings.setJobs(jobs);
+            });
 
     setScrollSafeGuard(comboBoxBeatPlugin);
     setScrollSafeGuard(comboBoxDownbeatDetector);
     setScrollSafeGuard(spinBoxDownbeatTimeout);
+    setScrollSafeGuard(spinBoxDownbeatJobs);
 }
 
 DlgPrefBeats::~DlgPrefBeats() {
@@ -204,6 +211,8 @@ void DlgPrefBeats::updateGui() {
     labelDownbeatCommand->setEnabled(commandOn);
     spinBoxDownbeatTimeout->setEnabled(commandOn);
     labelDownbeatTimeout->setEnabled(commandOn);
+    spinBoxDownbeatJobs->setEnabled(commandOn);
+    labelDownbeatJobs->setEnabled(commandOn);
     checkBoxReanalyze->setEnabled(m_bAnalyzerEnabled);
     checkBoxReanalyzeImported->setEnabled(m_bAnalyzerEnabled);
 
@@ -242,6 +251,7 @@ void DlgPrefBeats::updateGui() {
                     : 0);
     lineEditDownbeatCommand->setText(m_downbeatSettings.command());
     spinBoxDownbeatTimeout->setValue(m_downbeatSettings.timeoutSeconds());
+    spinBoxDownbeatJobs->setValue(m_downbeatSettings.jobs());
     checkBoxReanalyze->setChecked(m_bReanalyze);
     checkBoxReanalyzeImported->setChecked(m_bReanalyzeImported);
 

@@ -1,7 +1,7 @@
 #!/bin/sh
 # A stand-in for a downbeat detector in the tests of the muxic fork.
 #
-# Usage: fake-detector.sh MODE INPUT [OUTPUT]
+# Usage: fake-detector.sh MODE INPUT [OUTPUT] [PIDFILE]
 #
 # MODE picks what the program does:
 #   good      write a beat list at 128 beats per minute, first bar at beat 2
@@ -10,7 +10,9 @@
 #   empty     write nothing
 #   garbage   write lines that hold no time and no place
 #   fail      write nothing and stop with the code 3
-#   slow      sleep, thus the caller runs into its timeout
+#   slow      sleep, thus the caller runs into its timeout. The sleep runs
+#             as a child, and PIDFILE takes its number, thus a test can
+#             see whether the kill reached the whole process group
 #
 # The program writes to OUTPUT when the caller names one, else to its
 # standard output. The list does not depend on INPUT.
@@ -19,7 +21,12 @@ mode="$1"
 output="$3"
 
 if [ "$mode" = "slow" ]; then
-    sleep 120
+    sleep 120 &
+    child=$!
+    if [ -n "$4" ]; then
+        printf '%s\n' "$child" > "$4"
+    fi
+    wait "$child"
     exit 0
 fi
 if [ "$mode" = "fail" ]; then
