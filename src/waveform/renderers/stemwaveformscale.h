@@ -69,40 +69,4 @@ inline float stemStripHalfHeight(unsigned char stemPeak,
             volume / kWaveformPeakMax;
 }
 
-/// The one factor of a whole stem track. The analyzer fills the waveform
-/// while it runs, thus the reader keeps its place and reads only what is new.
-class StemTrackScale {
-  public:
-    float scale(const WaveformData* pData,
-            int dataSize,
-            int completion,
-            int stemCount) {
-        const int end = std::min(completion, dataSize);
-        if (pData != m_pData || dataSize != m_dataSize || end < m_readCount) {
-            m_pData = pData;
-            m_dataSize = dataSize;
-            m_readCount = 0;
-            m_allPeak = 0;
-            m_loudestStemPeak = 0;
-        }
-        for (int i = m_readCount; i < end; i++) {
-            const WaveformData& datum = pData[i];
-            m_allPeak = math_max(m_allPeak, datum.filtered.all);
-            for (int stemIdx = 0; stemIdx < stemCount; stemIdx++) {
-                m_loudestStemPeak = math_max(
-                        m_loudestStemPeak, datum.stems[stemIdx]);
-            }
-        }
-        m_readCount = math_max(m_readCount, end);
-        return stemOverlayScale(m_allPeak, m_loudestStemPeak);
-    }
-
-  private:
-    const WaveformData* m_pData{nullptr};
-    int m_dataSize{0};
-    int m_readCount{0};
-    unsigned char m_allPeak{0};
-    unsigned char m_loudestStemPeak{0};
-};
-
 } // namespace mixxx

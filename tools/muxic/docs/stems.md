@@ -218,11 +218,16 @@ the all band reaches 250 and the loudest stem band reaches 100, in the
 source file and in the stem file. On a waveform of 80 pixels the stem track
 drew 15.7 pixels where the normal track drew 39.2 pixels.
 
-The fork gives the whole track one factor, `max(all)` over
-`max(loudest stem)`, which lifts the loudest part to the height of the mix.
-The parts keep their size relative to each other, thus you still read which
-part is loud, and a part keeps its height when another part starts. The code
-is in `src/waveform/renderers/stemwaveformscale.h` and
+The fork lifts the parts in each strip of the waveform: the factor is `all`
+over the loudest part of that strip. The outline of a stem track is then the
+outline of the mix, which is what you read while you mix, and the parts keep
+their size relative to each other inside the strip. The cost: a part changes
+height when another part starts or stops, because the lift follows the
+loudest part. One factor for the whole track was tried first. On a real track
+the peak of one part comes close to the peak of the mix (a drum hit), thus
+that factor was 1.05 while the strips needed 1.6 on average, and the waveform
+stayed at 66 percent. The code is in
+`src/waveform/renderers/stemwaveformscale.h` and
 `src/waveform/renderers/allshader/waveformrendererstem.cpp`.
 
 The same change removed a second fault of the renderer: the gain of the deck
