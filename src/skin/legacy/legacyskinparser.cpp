@@ -21,6 +21,7 @@
 #include "mixer/basetrackplayer.h"
 #include "mixer/playermanager.h"
 #include "moc_legacyskinparser.cpp"
+#include "muxic/relatedtracks/relatedtrackspanel.h"
 #include "skin/legacy/colorschemeparser.h"
 #include "skin/legacy/launchimage.h"
 #include "skin/legacy/skincontext.h"
@@ -1708,7 +1709,10 @@ QWidget* LegacySkinParser::parseLibrary(const QDomElement& node) {
     // LibraryView's because they have not been added yet.
     commonWidgetSetup(node, pLibraryWidget, false);
 
-    return pLibraryWidget;
+    // The related tracks panel goes under the library table, inside the
+    // library area of the skin. No skin needs a node of its own for it.
+    return muxic::RelatedTracksPanel::wrapLibraryWidget(
+            pLibraryWidget, m_pLibrary, m_pConfig, m_pKeyboard);
 }
 
 QWidget* LegacySkinParser::parseLibrarySidebar(const QDomElement& node) {

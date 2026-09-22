@@ -22,6 +22,10 @@ SkinControls::SkinControls()
           m_showPreviewDecks(ConfigKey(kSkinGroup, QStringLiteral("show_preview_decks")),
                   true,
                   true),
+          m_showRelatedTracksPanel(
+                  ConfigKey(kSkinGroup, QStringLiteral("show_related_tracks_panel")),
+                  true,
+                  true),
           m_showSamplers(ConfigKey(kSkinGroup, QStringLiteral("show_samplers")),
                   true,
                   true),
@@ -51,6 +55,7 @@ SkinControls::SkinControls()
     m_showLibraryWindow.setButtonMode(mixxx::control::ButtonMode::Toggle);
     m_showMicrophones.setButtonMode(mixxx::control::ButtonMode::Toggle);
     m_showPreviewDecks.setButtonMode(mixxx::control::ButtonMode::Toggle);
+    m_showRelatedTracksPanel.setButtonMode(mixxx::control::ButtonMode::Toggle);
     m_showSamplers.setButtonMode(mixxx::control::ButtonMode::Toggle);
     m_show4EffectUnits.setButtonMode(mixxx::control::ButtonMode::Toggle);
     m_showCoverArt.setButtonMode(mixxx::control::ButtonMode::Toggle);
@@ -67,6 +72,8 @@ SkinControls::SkinControls()
             QStringLiteral("[Microphone]"), QStringLiteral("show_microphone")));
     m_showPreviewDecks.addAlias(ConfigKey(QStringLiteral("[PreviewDeck]"),
             QStringLiteral("show_previewdeck")));
+    m_showRelatedTracksPanel.addAlias(ConfigKey(QStringLiteral("[Library]"),
+            QStringLiteral("show_related_tracks_panel")));
     m_showSamplers.addAlias(ConfigKey(
             QStringLiteral("[Samplers]"), QStringLiteral("show_samplers")));
     m_showMaximizedLibrary.addAlias(ConfigKey(

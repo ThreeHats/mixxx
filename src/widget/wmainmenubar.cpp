@@ -416,6 +416,24 @@ void WMainMenuBar::initialize() {
             disableMaximizeLibrary);
 #endif
 
+    QString relatedPanelTitle = tr("Show Related Tracks Panel");
+    QString relatedPanelText =
+            tr("Show a table under the library table with the tracks that go "
+               "with the tracks on the decks.");
+    auto* pViewRelatedTracksPanel = new QAction(relatedPanelTitle, this);
+    pViewRelatedTracksPanel->setCheckable(true);
+    m_pKeyboard->registerMenuBarActionSetShortcut(
+            pViewRelatedTracksPanel,
+            ConfigKey(kKbdShortcutsGroup,
+                    QStringLiteral("ViewMenu_ShowRelatedTracksPanel")),
+            QStringLiteral("Ctrl+8"));
+    pViewRelatedTracksPanel->setStatusTip(relatedPanelText);
+    pViewRelatedTracksPanel->setWhatsThis(
+            buildWhatsThis(relatedPanelTitle, relatedPanelText));
+    createVisibilityControl(pViewRelatedTracksPanel,
+            ConfigKey(kSkinGroup, QStringLiteral("show_related_tracks_panel")));
+    pViewMenu->addAction(pViewRelatedTracksPanel);
+
     pViewMenu->addSeparator();
 
     QString autoDJTitle = tr("Show Auto DJ");

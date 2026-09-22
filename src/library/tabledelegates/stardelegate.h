@@ -28,9 +28,13 @@ class StarDelegate : public TableItemDelegate {
     void setModelData(QWidget* editor, QAbstractItemModel* model,
                       const QModelIndex& index) const;
 
+  protected slots:
+    /// Opens the star editor under the mouse. A view that shows a rating
+    /// which the user may not change overrides this.
+    virtual void cellEntered(const QModelIndex& index);
+
   private slots:
     void commitAndCloseEditor();
-    void cellEntered(const QModelIndex& index);
 
   private:
     QPersistentModelIndex m_currentEditedCellIndex;

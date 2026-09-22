@@ -12,6 +12,7 @@ class SkinControls {
     ControlPushButton m_showLibraryWindow;
     ControlPushButton m_showMicrophones;
     ControlPushButton m_showPreviewDecks;
+    ControlPushButton m_showRelatedTracksPanel;
     ControlPushButton m_showSamplers;
     ControlPushButton m_show4EffectUnits;
     ControlPushButton m_showCoverArt;

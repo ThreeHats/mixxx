@@ -2,6 +2,7 @@
 
 #include <QTableView>
 #include <algorithm>
+#include <utility>
 
 #include "library/dao/trackschema.h"
 #include "library/starrating.h"
@@ -27,6 +28,11 @@ const QString kRelationRatingColumn = QStringLiteral("relation_rating");
 const QString kRelationNotesColumn = QStringLiteral("relation_notes");
 const QString kRelationDirectionColumn = QStringLiteral("relation_direction");
 const QString kRelationCountColumn = QStringLiteral("relation_count");
+
+// The first column of a deck view, and a column that only its ORDER BY
+// reads. The model shows no column that it does not name.
+const QString kDeckNumberColumn = QStringLiteral("deck_number");
+const QString kSortArtistColumn = QStringLiteral("deck_sort_artist");
 
 // Every view of this model has the same columns, thus the table view keeps
 // its header when the mode changes.
@@ -96,15 +102,76 @@ QString formatTrackColumns() {
                     LIBRARYTABLE_COVERART);
 }
 
+/// The relation columns of a view that joins the relation table as `rel`.
+QString formatJoinedRelationColumns() {
+    return QStringLiteral(
+                   "rel.%1 AS %2,rel.%3 AS %4,rel.%5 AS %6,"
+                   "(CASE WHEN rel.%7<>0 THEN '%8' ELSE '%9' END)")
+                   .arg(TRACKRELATIONSTABLE_RELATION_TYPE,
+                           kRelationTypeColumn,
+                           TRACKRELATIONSTABLE_RATING,
+                           kRelationRatingColumn,
+                           TRACKRELATIONSTABLE_NOTES,
+                           kRelationNotesColumn,
+                           TRACKRELATIONSTABLE_BIDIRECTIONAL,
+                           kBothWaysArrow,
+                           kOneWayArrow) +
+            QStringLiteral(" AS %1,").arg(kRelationDirectionColumn) +
+            formatRelationCountColumn();
+}
+
+/// The empty relation columns of a view that reads no relation.
+QString formatEmptyRelationColumns() {
+    return QStringLiteral("'' AS %1,NULL AS %2,'' AS %3,'' AS %4,NULL AS %5")
+            .arg(kRelationTypeColumn,
+                    kRelationRatingColumn,
+                    kRelationNotesColumn,
+                    kRelationDirectionColumn,
+                    kRelationCountColumn);
+}
+
+/// The condition of the relations that lead from the reference track to the
+/// library row.
+QString formatRelationJoin(TrackId referenceTrackId) {
+    if (!referenceTrackId.isValid()) {
+        return QStringLiteral("0");
+    }
+    return QStringLiteral(
+            "(rel.%1=%3 AND rel.%2=%4) OR "
+            "(rel.%2=%3 AND rel.%1=%4 AND rel.%5<>0)")
+            .arg(TRACKRELATIONSTABLE_SOURCE_TRACK_ID,
+                    TRACKRELATIONSTABLE_TARGET_TRACK_ID,
+                    referenceTrackId.toString(),
+                    qualified(LIBRARYTABLE_ID),
+                    TRACKRELATIONSTABLE_BIDIRECTIONAL);
+}
+
+/// The deck number and the name that the ORDER BY of a deck view reads.
+QString formatDeckColumns(int deckNumber) {
+    return QStringLiteral("%1 AS %2,%3 AS %4")
+            .arg(QString::number(deckNumber),
+                    kDeckNumberColumn,
+                    qualified(LIBRARYTABLE_ARTIST),
+                    kSortArtistColumn);
+}
+
 } // anonymous namespace
+
+// static
+const char* RelatedTracksTableModel::kSidebarSettingsNamespace =
+        "mixxx.db.model.relatedtracks";
+// static
+const char* RelatedTracksTableModel::kPanelSettingsNamespace =
+        "mixxx.db.model.relatedtrackspanel";
 
 RelatedTracksTableModel::RelatedTracksTableModel(
         QObject* pParent,
-        TrackCollectionManager* pTrackCollectionManager)
+        TrackCollectionManager* pTrackCollectionManager,
+        const char* settingsNamespace)
         : TrackSetTableModel(
                   pParent,
                   pTrackCollectionManager,
-                  "mixxx.db.model.relatedtracks") {
+                  settingsNamespace) {
 }
 
 void RelatedTracksTableModel::storeSearchText() {
@@ -139,37 +206,58 @@ void RelatedTracksTableModel::setRelationTable(const QString& tableName,
     columns << LIBRARYTABLE_ID
             << LIBRARYTABLE_PREVIEW
             << LIBRARYTABLE_COVERART;
-    const int firstRelationColumn = columns.size();
-    columns << kRelationColumns;
+    QStringList extraColumns;
+    QStringList titles;
+    if (showsDecks()) {
+        extraColumns << kDeckNumberColumn;
+        titles << tr("Deck");
+    }
+    extraColumns << kRelationColumns;
+    titles << tr("Relation") << tr("Relation Rating") << tr("Relation Note")
+           << tr("Direction") << tr("Relations");
+    const int firstExtraColumn = columns.size();
+    columns << extraColumns;
 
     setTable(tableName,
             LIBRARYTABLE_ID,
             columns,
             m_pTrackCollectionManager->internalCollection()->getTrackSource());
 
-    // The relation columns belong to no ColumnCache entry, thus they get
-    // their header here.
-    const QStringList titles{tr("Relation"),
-            tr("Relation Rating"),
-            tr("Relation Note"),
-            tr("Direction"),
-            tr("Relations")};
-    DEBUG_ASSERT(titles.size() == kRelationColumns.size());
+    // The deck column and the relation columns belong to no ColumnCache
+    // entry, thus they get their header here.
+    DEBUG_ASSERT(titles.size() == extraColumns.size());
     for (int i = 0; i < titles.size(); ++i) {
-        const int section = firstRelationColumn + i;
+        const int section = firstExtraColumn + i;
         setHeaderData(section, Qt::Horizontal, titles.at(i), Qt::DisplayRole);
         setHeaderData(section,
                 Qt::Horizontal,
-                kRelationColumns.at(i),
+                extraColumns.at(i),
                 TrackModel::kHeaderNameRole);
+        const bool isDeckColumn = extraColumns.at(i) == kDeckNumberColumn;
         setHeaderData(section,
                 Qt::Horizontal,
-                ColumnCache::defaultColumnWidth() * 2,
+                isDeckColumn ? ColumnCache::defaultColumnWidth()
+                             : ColumnCache::defaultColumnWidth() * 2,
                 TrackModel::kHeaderWidthRole);
     }
 
     setSearch(m_searchTexts.value(static_cast<int>(m_mode)));
-    setDefaultSort(fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_ARTIST), Qt::AscendingOrder);
+    if (showsDecks()) {
+        // A deck view has one order: the deck, then the best relation. The
+        // table view of the panel shows no sort indicator.
+        const int deckColumn = fieldIndex(kDeckNumberColumn);
+        setDefaultSort(deckColumn, Qt::AscendingOrder);
+        if (m_sortedTableName != tableName) {
+            // setSort writes a row of the settings table, thus it runs one
+            // time for each view and not on each deck change.
+            m_sortedTableName = tableName;
+            setSort(deckColumn, Qt::AscendingOrder);
+        }
+    } else {
+        m_sortedTableName.clear();
+        setDefaultSort(fieldIndex(ColumnCache::COLUMN_LIBRARYTABLE_ARTIST),
+                Qt::AscendingOrder);
+    }
     select();
 }
 
@@ -212,49 +300,21 @@ void RelatedTracksTableModel::selectRelatedTo(TrackId trackId) {
     m_referenceTrackId = trackId;
 
     const QString tableName = QStringLiteral("muxic_related_to");
-    const QString relationColumns =
-            QStringLiteral(
-                    "rel.%1 AS %2,rel.%3 AS %4,rel.%5 AS %6,"
-                    "(CASE WHEN rel.%7<>0 THEN '%8' ELSE '%9' END)")
-                    .arg(TRACKRELATIONSTABLE_RELATION_TYPE,
-                            kRelationTypeColumn,
-                            TRACKRELATIONSTABLE_RATING,
-                            kRelationRatingColumn,
-                            TRACKRELATIONSTABLE_NOTES,
-                            kRelationNotesColumn,
-                            TRACKRELATIONSTABLE_BIDIRECTIONAL,
-                            kBothWaysArrow,
-                            kOneWayArrow) +
-            QStringLiteral(" AS %1,").arg(kRelationDirectionColumn) +
-            formatRelationCountColumn();
-    const QString relationJoin =
-            QStringLiteral(
-                    "(rel.%1=%3 AND rel.%2=%4) OR "
-                    "(rel.%2=%3 AND rel.%1=%4 AND rel.%5<>0)")
-                    .arg(TRACKRELATIONSTABLE_SOURCE_TRACK_ID,
-                            TRACKRELATIONSTABLE_TARGET_TRACK_ID,
-                            trackId.toString(),
-                            qualified(LIBRARYTABLE_ID),
-                            TRACKRELATIONSTABLE_BIDIRECTIONAL);
     const QString viewQuery =
             QStringLiteral(
                     "CREATE TEMPORARY VIEW IF NOT EXISTS %1 AS SELECT %2,%3 "
                     "FROM " LIBRARY_TABLE ",%4 rel WHERE %5=0 AND (%6)")
                     .arg(tableName,
                             formatTrackColumns(),
-                            relationColumns,
+                            formatJoinedRelationColumns(),
                             QStringLiteral(TRACK_RELATIONS_TABLE),
                             qualified(LIBRARYTABLE_MIXXXDELETED),
-                            relationJoin);
+                            formatRelationJoin(trackId));
 
     setRelationTable(tableName, viewQuery);
 }
 
-void RelatedTracksTableModel::selectSuggestedFor(TrackId trackId) {
-    storeSearchText();
-    m_mode = Mode::SuggestedFor;
-    m_referenceTrackId = trackId;
-
+QString RelatedTracksTableModel::formatSuggestionConditions(TrackId trackId) const {
     QString bpmClause;
     QString keyClause;
     if (trackId.isValid()) {
@@ -281,25 +341,111 @@ void RelatedTracksTableModel::selectSuggestedFor(TrackId trackId) {
         // The reference track has no tempo and no key, thus nothing fits it.
         conditions.append(QStringLiteral("0"));
     }
+    return conditions.join(QStringLiteral(" AND "));
+}
+
+void RelatedTracksTableModel::selectSuggestedFor(TrackId trackId) {
+    storeSearchText();
+    m_mode = Mode::SuggestedFor;
+    m_referenceTrackId = trackId;
 
     const QString tableName = QStringLiteral("muxic_suggested");
     // This view reads the whole library. A count of the relations of each
     // row costs more than the rest of the query.
-    const QString relationColumns =
-            QStringLiteral("'' AS %1,NULL AS %2,'' AS %3,'' AS %4,NULL AS %5")
-                    .arg(kRelationTypeColumn,
-                            kRelationRatingColumn,
-                            kRelationNotesColumn,
-                            kRelationDirectionColumn,
-                            kRelationCountColumn);
     const QString viewQuery =
             QStringLiteral(
                     "CREATE TEMPORARY VIEW IF NOT EXISTS %1 AS SELECT %2,%3 "
                     "FROM " LIBRARY_TABLE " WHERE %4")
                     .arg(tableName,
                             formatTrackColumns(),
-                            relationColumns,
-                            conditions.join(QStringLiteral(" AND ")));
+                            formatEmptyRelationColumns(),
+                            formatSuggestionConditions(trackId));
+
+    setRelationTable(tableName, viewQuery);
+}
+
+QString RelatedTracksTableModel::formatDeckTrackExclusion() const {
+    // A track that a deck holds is not a track that goes with a deck. Both
+    // deck views leave every loaded track out.
+    QStringList trackIds;
+    for (const DeckTrack& deckTrack : m_deckTracks) {
+        if (deckTrack.trackId.isValid()) {
+            trackIds.append(deckTrack.trackId.toString());
+        }
+    }
+    if (trackIds.isEmpty()) {
+        return QStringLiteral("1");
+    }
+    return QStringLiteral("%1 NOT IN (%2)")
+            .arg(qualified(LIBRARYTABLE_ID), trackIds.join(QChar(',')));
+}
+
+QString RelatedTracksTableModel::formatRelatedToDeckBranch(
+        const DeckTrack& deckTrack) const {
+    return QStringLiteral(
+            "SELECT %1,%2,%3 FROM " LIBRARY_TABLE
+            ",%4 rel "
+            "WHERE %5=0 AND %6 AND (%7)")
+            .arg(formatTrackColumns(),
+                    formatDeckColumns(deckTrack.deckNumber),
+                    formatJoinedRelationColumns(),
+                    QStringLiteral(TRACK_RELATIONS_TABLE),
+                    qualified(LIBRARYTABLE_MIXXXDELETED),
+                    formatDeckTrackExclusion(),
+                    formatRelationJoin(deckTrack.trackId));
+}
+
+QString RelatedTracksTableModel::formatSuggestedForDeckBranch(
+        const DeckTrack& deckTrack) const {
+    return QStringLiteral("SELECT %1,%2,%3 FROM " LIBRARY_TABLE " WHERE %4 AND %5")
+            .arg(formatTrackColumns(),
+                    formatDeckColumns(deckTrack.deckNumber),
+                    formatEmptyRelationColumns(),
+                    formatSuggestionConditions(deckTrack.trackId),
+                    formatDeckTrackExclusion());
+}
+
+void RelatedTracksTableModel::selectRelatedToDecks(const DeckTrackList& deckTracks) {
+    storeSearchText();
+    m_mode = Mode::RelatedToDecks;
+    m_referenceTrackId = TrackId();
+    m_deckTracks = deckTracks;
+
+    QStringList branches;
+    for (const DeckTrack& deckTrack : std::as_const(m_deckTracks)) {
+        branches.append(formatRelatedToDeckBranch(deckTrack));
+    }
+    if (branches.isEmpty()) {
+        // Without a deck the view keeps its columns and holds no row.
+        branches.append(formatRelatedToDeckBranch(DeckTrack{}));
+    }
+
+    const QString tableName = QStringLiteral("muxic_related_decks");
+    const QString viewQuery =
+            QStringLiteral("CREATE TEMPORARY VIEW IF NOT EXISTS %1 AS %2")
+                    .arg(tableName, branches.join(QStringLiteral(" UNION ALL ")));
+
+    setRelationTable(tableName, viewQuery);
+}
+
+void RelatedTracksTableModel::selectSuggestedForDecks(const DeckTrackList& deckTracks) {
+    storeSearchText();
+    m_mode = Mode::SuggestedForDecks;
+    m_referenceTrackId = TrackId();
+    m_deckTracks = deckTracks;
+
+    QStringList branches;
+    for (const DeckTrack& deckTrack : std::as_const(m_deckTracks)) {
+        branches.append(formatSuggestedForDeckBranch(deckTrack));
+    }
+    if (branches.isEmpty()) {
+        branches.append(formatSuggestedForDeckBranch(DeckTrack{}));
+    }
+
+    const QString tableName = QStringLiteral("muxic_suggested_decks");
+    const QString viewQuery =
+            QStringLiteral("CREATE TEMPORARY VIEW IF NOT EXISTS %1 AS %2")
+                    .arg(tableName, branches.join(QStringLiteral(" UNION ALL ")));
 
     setRelationTable(tableName, viewQuery);
 }
@@ -314,6 +460,12 @@ void RelatedTracksTableModel::refresh() {
         return;
     case Mode::SuggestedFor:
         selectSuggestedFor(m_referenceTrackId);
+        return;
+    case Mode::RelatedToDecks:
+        selectRelatedToDecks(m_deckTracks);
+        return;
+    case Mode::SuggestedForDecks:
+        selectSuggestedForDecks(m_deckTracks);
         return;
     }
     DEBUG_ASSERT(!"unreachable");
@@ -364,15 +516,61 @@ TrackModel::Capabilities RelatedTracksTableModel::getCapabilities() const {
             Capability::LoadToPreviewDeck |
             Capability::ResetPlayed |
             Capability::Analyze |
-            Capability::Properties |
-            Capability::Sorting;
+            Capability::Properties;
 
+    // A deck view groups its rows by deck. A sort of the user would break
+    // the groups, and `[Library],sort_column` belongs to the library table.
+    if (!showsDecks()) {
+        caps |= Capability::Sorting;
+    }
     // The root node holds every relation. A Remove there would wipe the
     // table, thus only a view with one relation per row offers it.
     if (showsOneRelationPerRow()) {
         caps |= Capability::Remove;
     }
     return caps;
+}
+
+TrackModel::SortColumnId RelatedTracksTableModel::sortColumnIdFromColumnIndex(
+        int column) const {
+    if (showsDecks()) {
+        return TrackModel::SortColumnId::Invalid;
+    }
+    return TrackSetTableModel::sortColumnIdFromColumnIndex(column);
+}
+
+int RelatedTracksTableModel::columnIndexFromSortColumnId(
+        TrackModel::SortColumnId sortColumn) const {
+    if (showsDecks()) {
+        return -1;
+    }
+    return TrackSetTableModel::columnIndexFromSortColumnId(sortColumn);
+}
+
+bool RelatedTracksTableModel::isColumnHiddenByDefault(int column) {
+    if (!showsDecks()) {
+        return TrackSetTableModel::isColumnHiddenByDefault(column);
+    }
+    // The panel is short. It shows the deck, the relation and the columns
+    // that say if two tracks mix.
+    static const QList<ColumnCache::Column> kPanelColumns{
+            ColumnCache::COLUMN_LIBRARYTABLE_ARTIST,
+            ColumnCache::COLUMN_LIBRARYTABLE_TITLE,
+            ColumnCache::COLUMN_LIBRARYTABLE_BPM,
+            ColumnCache::COLUMN_LIBRARYTABLE_KEY,
+            ColumnCache::COLUMN_LIBRARYTABLE_DURATION};
+    if (column == fieldIndex(kDeckNumberColumn) ||
+            column == fieldIndex(kRelationTypeColumn) ||
+            column == fieldIndex(kRelationRatingColumn) ||
+            column == fieldIndex(kRelationNotesColumn)) {
+        return false;
+    }
+    for (const auto panelColumn : kPanelColumns) {
+        if (column == fieldIndex(panelColumn)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 TrackRelationStorage& RelatedTracksTableModel::storage() const {
@@ -391,15 +589,54 @@ bool RelatedTracksTableModel::relationForIndex(
     return storage().readRelation(m_referenceTrackId, trackId, pRelation);
 }
 
-QVariant RelatedTracksTableModel::data(const QModelIndex& index, int role) const {
-    if (index.isValid() &&
-            index.column() == fieldIndex(kRelationRatingColumn) &&
-            (role == Qt::DisplayRole || role == Qt::EditRole)) {
-        const QVariant value = rawValue(index);
-        if (value.isNull()) {
-            return QVariant();
+bool RelatedTracksTableModel::isExtraColumn(int column) const {
+    if (column < 0) {
+        return false;
+    }
+    if (column == fieldIndex(kDeckNumberColumn)) {
+        return true;
+    }
+    for (const QString& columnName : kRelationColumns) {
+        if (column == fieldIndex(columnName)) {
+            return true;
         }
-        return QVariant::fromValue(StarRating(value.toInt()));
+    }
+    return false;
+}
+
+QVariant RelatedTracksTableModel::data(const QModelIndex& index, int role) const {
+    if (index.isValid() && isExtraColumn(index.column())) {
+        const int column = index.column();
+        // The ColumnCache knows no column of this model, thus the base class
+        // gives the value of the cell for each role that it answers.
+        switch (role) {
+        case Qt::CheckStateRole:
+        case Qt::DecorationRole:
+            return QVariant();
+        case Qt::TextAlignmentRole:
+            // The cast to int works around a bug like
+            // https://bugreports.qt.io/browse/QTBUG-67582
+            if (column == fieldIndex(kDeckNumberColumn) ||
+                    column == fieldIndex(kRelationRatingColumn) ||
+                    column == fieldIndex(kRelationCountColumn)) {
+                return static_cast<int>(Qt::AlignVCenter | Qt::AlignRight);
+            }
+            return static_cast<int>(Qt::AlignVCenter | Qt::AlignLeft);
+        case Qt::DisplayRole:
+        case Qt::EditRole:
+            if (column == fieldIndex(kRelationRatingColumn)) {
+                const QVariant value = rawValue(index);
+                if (value.isNull()) {
+                    return QVariant();
+                }
+                return QVariant::fromValue(StarRating(value.toInt()));
+            }
+            break;
+        default:
+            // The colors of a row come from the base class, which reads a
+            // column of the library for them.
+            break;
+        }
     }
     return TrackSetTableModel::data(index, role);
 }
@@ -530,6 +767,15 @@ QStringList RelatedTracksTableModel::knownRelationTypes() const {
 }
 
 QString RelatedTracksTableModel::tableColumnSortExpression(int column) const {
+    if (showsDecks() && column == fieldIndex(kDeckNumberColumn)) {
+        // The deck view has one order: the decks in their own order, the
+        // best relation of a deck first, then the artist.
+        return QStringLiteral("%1.%2, CAST(%1.%3 AS INTEGER) DESC, %1.%4 COLLATE NOCASE")
+                .arg(m_tableName,
+                        kDeckNumberColumn,
+                        kRelationRatingColumn,
+                        kSortArtistColumn);
+    }
     if (column == fieldIndex(kRelationRatingColumn)) {
         return QStringLiteral("CAST(%1.%2 AS INTEGER)")
                 .arg(m_tableName, kRelationRatingColumn);
@@ -552,6 +798,12 @@ QString RelatedTracksTableModel::modelKey(bool noSearch) const {
         break;
     case Mode::SuggestedFor:
         key += QStringLiteral(":suggested");
+        break;
+    case Mode::RelatedToDecks:
+        key += QStringLiteral(":decks");
+        break;
+    case Mode::SuggestedForDecks:
+        key += QStringLiteral(":decks-suggested");
         break;
     }
     if (noSearch) {
