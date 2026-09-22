@@ -5,7 +5,7 @@ loudness. The fork also takes the saved column layout of upstream pull
 request 14479.
 
 The muxic hub owns the data. It computes energy, danceability and tags in
-Python (`hub/muxichub/quality.py`) and writes them into a fork table. Mixxx
+Python (`hub/muxichub/trackmeta.py`) and writes them into a fork table. Mixxx
 reads the table, shows the values, sorts and searches by them, and can edit
 energy and tags.
 
