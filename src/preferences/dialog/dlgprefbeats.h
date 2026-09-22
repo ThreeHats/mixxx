@@ -4,6 +4,7 @@
 #include <QString>
 
 #include "analyzer/plugins/analyzerplugin.h"
+#include "muxic/downbeats/externaldownbeatdetector.h"
 #include "preferences/beatdetectionsettings.h"
 #include "preferences/dialog/dlgpreferencepage.h"
 #include "preferences/dialog/ui_dlgprefbeatsdlg.h"
@@ -43,11 +44,14 @@ class DlgPrefBeats : public DlgPreferencePage, public Ui::DlgBeatsDlg {
     void slotReanalyzeImportedChanged(int value);
 #endif
     void slotStemStrategyChanged(int index);
+    void slotDownbeatDetectorChanged(int index);
 
   private:
     void updateGui();
 
+    UserSettingsPointer m_pConfig;
     BeatDetectionSettings m_bpmSettings;
+    mixxx::ExternalDownbeatSettings m_downbeatSettings;
     QList<mixxx::AnalyzerPluginInfo> m_availablePlugins;
     QString m_selectedAnalyzerId;
     bool m_bAnalyzerEnabled;
