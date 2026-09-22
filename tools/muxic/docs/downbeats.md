@@ -299,6 +299,17 @@ The default keyboard mapping maps no beat grid control at all, not even
 controller mapping or a keyboard file of the user reaches them by the names
 above.
 
+### The button in LateNight
+
+The beat grid button row of each deck in LateNight has a tall button with
+one long bar and three short bars, between the beat shift buttons and the
+Undo and Lock column. A left click sets the downbeat to the beat closest to
+the play position. A right click moves the downbeat one beat later, thus four
+right clicks go once around the bar. The files: `res/skins/LateNight/waveform.xml`,
+the two style sheets, `btn__downbeat.svg` in each scheme, and the tooltip
+`beats_set_downbeat` in `src/skin/legacy/tooltips.cpp`. Deere and the other
+skins have no button. Their mappings reach the controls by name.
+
 ## The waveform
 
 The scrolling waveform makes the bar line stronger than the beat line, with
