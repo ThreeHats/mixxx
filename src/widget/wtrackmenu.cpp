@@ -585,6 +585,11 @@ void WTrackMenu::createActions() {
         connect(m_pTranslateBeatsHalf, &QAction::triggered, this, [this] {
             slotTranslateBeatsHalf();
         });
+
+        m_pSetDownbeatAction = make_parented<QAction>(tr("Set Downbeat Here"), m_pBPMMenu);
+        connect(m_pSetDownbeatAction, &QAction::triggered, this, [this] {
+            slotSetDownbeat();
+        });
     }
 
     if (featureIsEnabled(Feature::Analyze)) {
@@ -714,6 +719,7 @@ void WTrackMenu::setupActions() {
         if (m_pTranslateBeatsHalf) {
             m_pBPMMenu->addSeparator();
             m_pBPMMenu->addAction(m_pTranslateBeatsHalf);
+            m_pBPMMenu->addAction(m_pSetDownbeatAction);
         }
         m_pBPMMenu->addSeparator();
         m_pBPMMenu->addAction(m_pBpmLockAction);
@@ -1243,6 +1249,9 @@ void WTrackMenu::updateMenus() {
     if (m_pTranslateBeatsHalf) {
         m_pTranslateBeatsHalf->setEnabled(!m_deckGroup.isEmpty());
     }
+    if (m_pSetDownbeatAction) {
+        m_pSetDownbeatAction->setEnabled(!m_deckGroup.isEmpty());
+    }
 
     if (featureIsEnabled(Feature::Color)) {
         m_pColorPickerAction->setColorPalette(
@@ -1554,6 +1563,18 @@ void WTrackMenu::slotTranslateBeatsHalf() {
         return;
     }
     m_pTrack->trySetBeats(*translatedBeats);
+}
+
+void WTrackMenu::slotSetDownbeat() {
+    if (m_deckGroup.isEmpty()) {
+        return;
+    }
+    // The engine thread knows the play position of the deck to the frame,
+    // thus the control does the work. A push button takes a press and a
+    // release.
+    const ConfigKey key(m_deckGroup, QStringLiteral("beats_set_downbeat"));
+    ControlObject::set(key, 1.0);
+    ControlObject::set(key, 0.0);
 }
 
 void WTrackMenu::slotImportMetadataFromFileTags() {

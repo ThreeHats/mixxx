@@ -10,6 +10,7 @@
 #include "analyzer/plugins/analyzerqueenmarybeats.h"
 #include "analyzer/plugins/analyzersoundtouchbeats.h"
 #include "library/rekordbox/rekordboxconstants.h"
+#include "muxic/downbeats/downbeatdetector.h"
 #include "track/beatfactory.h"
 #include "track/track.h"
 
@@ -125,6 +126,14 @@ bool AnalyzerBeats::initialize(const AnalyzerTrack& track,
             bShouldAnalyze = false;
         }
     }
+
+    // The detector needs the beat positions of the plugin. A plugin that
+    // gives only a BPM gives it nothing to work with.
+    if (bShouldAnalyze && m_pPlugin->supportsBeatTracking() &&
+            m_bpmSettings.getDownbeatDetectionEnabled()) {
+        m_pDownbeatDetector = std::make_unique<mixxx::DownbeatDetector>(
+                m_sampleRate, mixxx::BarPhase::kDefaultBeatsPerBar);
+    }
     return bShouldAnalyze;
 }
 
@@ -236,6 +245,13 @@ bool AnalyzerBeats::processSamples(const CSAMPLE* pIn, SINT count) {
         return true; // silently ignore all remaining samples
     }
 
+    if (m_pDownbeatDetector) {
+        m_pDownbeatDetector->processSamples(pBeatInput,
+                count,
+                pDrumChannel ? mixxx::audio::ChannelCount::stereo()
+                             : static_cast<int>(m_channelCount));
+    }
+
     bool ret = m_pPlugin->processSamples(pBeatInput, count);
     if (pDrumChannel) {
         SampleUtil::free(pDrumChannel);
@@ -245,6 +261,7 @@ bool AnalyzerBeats::processSamples(const CSAMPLE* pIn, SINT count) {
 
 void AnalyzerBeats::cleanup() {
     m_pPlugin.reset();
+    m_pDownbeatDetector.reset();
 }
 
 void AnalyzerBeats::storeResults(TrackPointer pTrack) {
@@ -258,8 +275,9 @@ void AnalyzerBeats::storeResults(TrackPointer pTrack) {
     }
 
     mixxx::BeatsPointer pBeats;
+    QVector<mixxx::audio::FramePos> beats;
     if (m_pPlugin->supportsBeatTracking()) {
-        QVector<mixxx::audio::FramePos> beats = m_pPlugin->getBeats();
+        beats = m_pPlugin->getBeats();
         QHash<QString, QString> extraVersionInfo = getExtraVersionInfo(
                 m_pluginId, m_bPreferencesFastAnalysis);
         pBeats = BeatFactory::makePreferredBeats(
@@ -279,6 +297,18 @@ void AnalyzerBeats::storeResults(TrackPointer pTrack) {
         mixxx::Bpm bpm = m_pPlugin->getBpm();
         qDebug() << "AnalyzerBeats plugin detected constant BPM: " << bpm;
         pBeats = mixxx::Beats::fromConstTempo(m_sampleRate, mixxx::audio::kStartFramePos, bpm);
+    }
+
+    if (pBeats && m_pDownbeatDetector && !beats.isEmpty()) {
+        const mixxx::DownbeatPhase phase = m_pDownbeatDetector->finalize(beats);
+        qDebug() << "AnalyzerBeats downbeat detection: accepted" << phase.accepted
+                 << "phase" << phase.phase << "confidence" << phase.confidence;
+        if (phase.accepted && phase.phase < beats.size()) {
+            const auto pWithBarPhase = pBeats->trySetDownbeatNear(beats.at(phase.phase));
+            if (pWithBarPhase) {
+                pBeats = *pWithBarPhase;
+            }
+        }
     }
 
     pTrack->trySetBeats(pBeats);

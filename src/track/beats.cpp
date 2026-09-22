@@ -1,5 +1,6 @@
 #include "track/beats.h"
 
+#include <algorithm>
 #include <cmath>
 #include <iterator>
 #include <unordered_map>
@@ -21,9 +22,46 @@ struct BeatGridV1Data {
 
 constexpr double kEpsilon = 0.01;
 
+/// Read the bar phase out of a `BeatGrid` or a `BeatMap` message. A message
+/// with no offset field has no phase.
+template<typename Message>
+std::optional<mixxx::BarPhase> barPhaseFromProto(const Message& message) {
+    if (!message.has_downbeats_offset()) {
+        return std::nullopt;
+    }
+    const int beatsPerBar = message.has_beats_per_bar()
+            ? message.beats_per_bar()
+            : mixxx::BarPhase::kDefaultBeatsPerBar;
+    return mixxx::BarPhase(message.downbeats_offset(), beatsPerBar);
+}
+
+/// Write the bar phase into a `BeatGrid` or a `BeatMap` message. A grid with
+/// no phase writes no field.
+template<typename Message>
+void barPhaseToProto(const std::optional<mixxx::BarPhase>& barPhase, Message* pMessage) {
+    if (!barPhase) {
+        return;
+    }
+    pMessage->set_downbeats_offset(barPhase->downbeatOffset());
+    pMessage->set_beats_per_bar(barPhase->beatsPerBar());
+}
+
 } // namespace
 
 namespace mixxx {
+
+BarPhase::BarPhase(int downbeatOffset, int beatsPerBar)
+        : m_beatsPerBar(std::max(1, beatsPerBar)) {
+    m_downbeatOffset = static_cast<int>(
+            ((static_cast<long long>(downbeatOffset) % m_beatsPerBar) +
+                    m_beatsPerBar) %
+            m_beatsPerBar);
+}
+
+BarPhase BarPhase::scaled(double bpmScaleFactor) const {
+    return BarPhase(static_cast<int>(std::lround(m_downbeatOffset * bpmScaleFactor)),
+            m_beatsPerBar);
+}
 
 mixxx::audio::FrameDiff_t Beats::ConstIterator::beatLengthFrames() const {
     if (m_it == m_beats->m_markers.cend()) {
@@ -163,19 +201,26 @@ mixxx::BeatsPointer Beats::fromConstTempo(
         mixxx::audio::SampleRate sampleRate,
         mixxx::audio::FramePos lastMarkerPosition,
         mixxx::Bpm lastMarkerBpm,
-        const QString& subVersion) {
+        const QString& subVersion,
+        const std::optional<BarPhase>& barPhase) {
     VERIFY_OR_DEBUG_ASSERT(sampleRate.isValid() &&
             lastMarkerPosition.isValid() && lastMarkerBpm.isValid()) {
         return nullptr;
     }
-    return BeatsPointer(new Beats({}, lastMarkerPosition, lastMarkerBpm, sampleRate, subVersion));
+    return BeatsPointer(new Beats({},
+            lastMarkerPosition,
+            lastMarkerBpm,
+            sampleRate,
+            subVersion,
+            barPhase));
 }
 
 // static
 mixxx::BeatsPointer Beats::fromBeatPositions(
         mixxx::audio::SampleRate sampleRate,
         const QVector<audio::FramePos>& beatPositions,
-        const QString& subVersion) {
+        const QString& subVersion,
+        const std::optional<BarPhase>& barPhase) {
     VERIFY_OR_DEBUG_ASSERT(sampleRate.isValid() && beatPositions.size() >= 2) {
         return nullptr;
     }
@@ -232,7 +277,8 @@ mixxx::BeatsPointer Beats::fromBeatPositions(
             markerPosition.toLowerFrameBoundary(),
             bpm,
             sampleRate,
-            subVersion));
+            subVersion,
+            barPhase));
 }
 
 // static
@@ -302,7 +348,8 @@ mixxx::BeatsPointer Beats::fromBeatGridByteArray(
     }
 
     if (position.isValid() && bpm.isValid()) {
-        return fromConstTempo(sampleRate, position, bpm, subVersion);
+        return fromConstTempo(
+                sampleRate, position, bpm, subVersion, barPhaseFromProto(grid));
     }
 
     // Failed to parse the beatgrid.
@@ -335,7 +382,8 @@ BeatsPointer Beats::fromBeatMapByteArray(
         return nullptr;
     }
 
-    return fromBeatPositions(sampleRate, beatPositions, subVersion);
+    return fromBeatPositions(
+            sampleRate, beatPositions, subVersion, barPhaseFromProto(map));
 }
 
 QByteArray Beats::toByteArray() const {
@@ -354,6 +402,7 @@ QByteArray Beats::toBeatGridByteArray() const {
             static_cast<google::protobuf::int32>(
                     m_lastMarkerPosition.toLowerFrameBoundary().value()));
     grid.mutable_bpm()->set_bpm(m_lastMarkerBpm.value());
+    barPhaseToProto(m_barPhase, &grid);
 
     std::string output;
     grid.SerializeToString(&output);
@@ -368,6 +417,7 @@ QByteArray Beats::toBeatMapByteArray() const {
         beat.set_frame_position(static_cast<google::protobuf::int32>(position.value()));
         map.add_beat()->CopyFrom(beat);
     }
+    barPhaseToProto(m_barPhase, &map);
 
     std::string output;
     map.SerializeToString(&output);
@@ -636,7 +686,8 @@ std::optional<BeatsPointer> Beats::tryTranslate(audio::FrameDiff_t offsetFrames)
             lastMarkerPosition.toLowerFrameBoundary(),
             m_lastMarkerBpm,
             m_sampleRate,
-            m_subVersion));
+            m_subVersion,
+            m_barPhase));
 }
 
 std::optional<BeatsPointer> Beats::tryTranslateBeats(double xBeats) const {
@@ -650,7 +701,8 @@ std::optional<BeatsPointer> Beats::tryTranslateBeats(double xBeats) const {
             lastMarkerPosition.toLowerFrameBoundary(),
             m_lastMarkerBpm,
             m_sampleRate,
-            m_subVersion));
+            m_subVersion,
+            m_barPhase));
 }
 
 std::optional<BeatsPointer> Beats::tryScale(BpmScale scale) const {
@@ -702,16 +754,67 @@ std::optional<BeatsPointer> Beats::tryScale(BpmScale scale) const {
 
     Bpm lastMarkerBpm = m_lastMarkerBpm * scaleFactor;
 
+    // A scaled grid has other beats, thus the offset of the first downbeat
+    // moves with the scale factor.
+    std::optional<BarPhase> barPhase;
+    if (m_barPhase) {
+        barPhase = m_barPhase->scaled(scaleFactor);
+    }
+
     return BeatsPointer(new Beats(markers,
             m_lastMarkerPosition,
             lastMarkerBpm,
             m_sampleRate,
-            m_subVersion));
+            m_subVersion,
+            barPhase));
 }
 
 std::optional<BeatsPointer> Beats::trySetBpm(mixxx::Bpm bpm) const {
     const auto it = cfirstmarker();
-    return BeatsPointer(new Beats({}, *it, bpm, m_sampleRate, m_subVersion));
+    return BeatsPointer(new Beats({}, *it, bpm, m_sampleRate, m_subVersion, m_barPhase));
+}
+
+int Beats::beatInBarAt(audio::FramePos position) const {
+    if (!m_barPhase || !position.isValid() || !isValid()) {
+        return 0;
+    }
+    auto it = iteratorFrom(position);
+    if (it == cend() || it == cbegin()) {
+        return 0;
+    }
+    if (*it > position) {
+        it = it - 1;
+    }
+    return m_barPhase->beatInBar(beatIndex(it));
+}
+
+BeatsPointer Beats::withBarPhase(const std::optional<BarPhase>& barPhase) const {
+    return BeatsPointer(new Beats(m_markers,
+            m_lastMarkerPosition,
+            m_lastMarkerBpm,
+            m_sampleRate,
+            m_subVersion,
+            barPhase));
+}
+
+std::optional<BeatsPointer> Beats::trySetDownbeatNear(audio::FramePos position) const {
+    const audio::FramePos beatPosition = findClosestBeat(position);
+    if (!beatPosition.isValid()) {
+        return std::nullopt;
+    }
+    const int beatsPerBar = m_barPhase ? m_barPhase->beatsPerBar()
+                                       : BarPhase::kDefaultBeatsPerBar;
+    const auto barPhase = BarPhase(beatIndex(iteratorFrom(beatPosition)), beatsPerBar);
+    return withBarPhase(barPhase);
+}
+
+std::optional<BeatsPointer> Beats::tryShiftBarPhase(int beats) const {
+    if (!m_barPhase) {
+        return std::nullopt;
+    }
+    const auto barPhase = BarPhase(
+            m_barPhase->downbeatOffset() + beats, m_barPhase->beatsPerBar());
+    return withBarPhase(barPhase);
 }
 
 bool Beats::isValid() const {

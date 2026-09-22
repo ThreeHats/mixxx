@@ -69,6 +69,18 @@ This can speed up beat detection on slower computers but may result in lower qua
        </widget>
       </item>
       <item>
+       <widget class="QCheckBox" name="checkBoxDetectDownbeats">
+        <property name="toolTip">
+         <string>Find the first beat of the bar after the beat analysis.
+The waveform then draws the bar lines stronger, and a controller mapping can read [ChannelN],beat_in_bar.
+The detector assumes 4/4 and works best on electronic dance music.</string>
+        </property>
+        <property name="text">
+         <string>Detect downbeats (the first beat of the bar)</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QCheckBox" name="checkBoxReanalyze">
         <property name="toolTip">
          <string>e.g. from 3rd-party programs or Mixxx versions before 1.11.

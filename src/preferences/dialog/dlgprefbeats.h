@@ -31,12 +31,14 @@ class DlgPrefBeats : public DlgPreferencePage, public Ui::DlgBeatsDlg {
     void analyzerEnabled(Qt::CheckState state);
     void fixedtempoEnabled(Qt::CheckState state);
     void fastAnalysisEnabled(Qt::CheckState state);
+    void detectDownbeatsEnabled(Qt::CheckState state);
     void slotReanalyzeChanged(Qt::CheckState state);
     void slotReanalyzeImportedChanged(Qt::CheckState state);
 #else
     void analyzerEnabled(int i);
     void fixedtempoEnabled(int i);
     void fastAnalysisEnabled(int i);
+    void detectDownbeatsEnabled(int i);
     void slotReanalyzeChanged(int value);
     void slotReanalyzeImportedChanged(int value);
 #endif
@@ -51,6 +53,7 @@ class DlgPrefBeats : public DlgPreferencePage, public Ui::DlgBeatsDlg {
     bool m_bAnalyzerEnabled;
     bool m_bFixedTempoEnabled;
     bool m_bFastAnalysisEnabled;
+    bool m_bDetectDownbeats;
     bool m_bReanalyze;
     bool m_bReanalyzeImported;
     BeatDetectionSettings::StemStrategy m_stemStrategy;

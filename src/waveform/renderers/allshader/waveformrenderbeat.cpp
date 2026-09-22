@@ -5,8 +5,8 @@
 #include "engine/engine.h"
 #include "moc_waveformrenderbeat.cpp"
 #include "rendergraph/geometry.h"
-#include "rendergraph/material/unicolormaterial.h"
-#include "rendergraph/vertexupdaters/vertexupdater.h"
+#include "rendergraph/material/rgbamaterial.h"
+#include "rendergraph/vertexupdaters/rgbavertexupdater.h"
 #include "skin/legacy/skincontext.h"
 #include "track/track.h"
 #include "waveform/renderers/waveformwidgetrenderer.h"
@@ -16,13 +16,17 @@
 
 using namespace rendergraph;
 
+namespace {
+constexpr float kBeatAlphaFactor = 0.6f;
+} // namespace
+
 namespace allshader {
 
 WaveformRenderBeat::WaveformRenderBeat(WaveformWidgetRenderer* waveformWidget,
         ::WaveformRendererAbstract::PositionSource type)
         : ::WaveformRendererAbstract(waveformWidget),
           m_isSlipRenderer(type == ::WaveformRendererAbstract::Slip) {
-    initForRectangles<UniColorMaterial>(0);
+    initForRectangles<RGBAMaterial>(0);
     setUsePreprocess(true);
 }
 
@@ -119,15 +123,30 @@ bool WaveformRenderBeat::preprocessInner() {
     const int reserved = numBeatsInRange * numVerticesPerLine * numBoxesPerBeat;
     geometry().allocate(reserved);
 
-    VertexUpdater vertexUpdater{geometry().vertexDataAs<Geometry::Point2D>()};
+    RGBAVertexUpdater vertexUpdater{geometry().vertexDataAs<Geometry::RGBAColoredPoint2D>()};
 
     const float boxBreadth = splitStemTracks
             ? rendererBreadth / static_cast<float>(mixxx::kMaxSupportedStems)
             : rendererBreadth;
 
-    for (auto it = trackBeats->iteratorFrom(startPosition);
-            it != trackBeats->cend() && *it <= endPosition;
-            ++it) {
+    // A track with a bar phase draws the beat lines weaker than the bar
+    // lines. Without a phase every line keeps the alpha of the skin.
+    const QVector4D barColor{static_cast<float>(m_color.redF()),
+            static_cast<float>(m_color.greenF()),
+            static_cast<float>(m_color.blueF()),
+            static_cast<float>(m_color.alphaF())};
+    const std::optional<mixxx::BarPhase>& barPhase = trackBeats->barPhase();
+    const QVector4D beatColor = barPhase
+            ? QVector4D{barColor.x(), barColor.y(), barColor.z(), barColor.w() * kBeatAlphaFactor}
+            : barColor;
+
+    // The grid index of the first drawn beat. Stepping it with the iterator
+    // costs less than a lookup for each beat of a grid with tempo markers.
+    auto it = trackBeats->iteratorFrom(startPosition);
+    const bool drawBars = barPhase && it != trackBeats->cbegin();
+    int beatIndex = drawBars ? trackBeats->beatIndex(it) : 0;
+
+    for (; it != trackBeats->cend() && *it <= endPosition; ++it, ++beatIndex) {
         double beatPosition = it->toEngineSamplePos();
         double xBeatPoint =
                 m_waveformRenderer->transformSamplePositionInRendererWorld(
@@ -137,23 +156,25 @@ bool WaveformRenderBeat::preprocessInner() {
 
         const float x1 = static_cast<float>(xBeatPoint);
         const float x2 = x1 + 1.f;
+        const QVector4D& color =
+                (drawBars && barPhase->isDownbeat(beatIndex)) ? barColor : beatColor;
 
         if (m_isSlipRenderer && splitStemTracks) {
             for (int stemIdx = 0; stemIdx < mixxx::kMaxSupportedStems; ++stemIdx) {
                 const float posy1 = stemIdx * boxBreadth;
                 const float posy2 = posy1 + boxBreadth / 2.f;
-                vertexUpdater.addRectangle({x1, posy1}, {x2, posy2});
+                vertexUpdater.addRectangle({x1, posy1}, {x2, posy2}, color);
             }
         } else {
             vertexUpdater.addRectangle({x1, 0.f},
-                    {x2, m_isSlipRenderer ? rendererBreadth / 2 : rendererBreadth});
+                    {x2, m_isSlipRenderer ? rendererBreadth / 2 : rendererBreadth},
+                    color);
         }
     }
     markDirtyGeometry();
 
     DEBUG_ASSERT(reserved == vertexUpdater.index());
 
-    material().setUniform(1, m_color);
     markDirtyMaterial();
 
     return true;

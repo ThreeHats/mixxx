@@ -1514,6 +1514,7 @@ add_library(
   src/musicbrainz/web/coverartarchiveimagetask.cpp
   src/musicbrainz/web/coverartarchivelinkstask.cpp
   src/musicbrainz/web/musicbrainzrecordingstask.cpp
+  src/muxic/downbeats/downbeatdetector.cpp
   src/muxic/librarycolumns/librarycolumns.cpp
   src/muxic/librarycolumns/searchfilters.cpp
   src/muxic/librarycolumns/trackmeta.cpp
@@ -2907,6 +2908,7 @@ if(BUILD_TESTING)
     src/test/analyzersilence_test.cpp
     src/test/audiotaperpot_test.cpp
     src/test/autodjprocessor_test.cpp
+    src/test/barphase_test.cpp
     src/test/beatgridtest.cpp
     src/test/beatmaptest.cpp
     src/test/beatstest.cpp
@@ -2940,6 +2942,8 @@ if(BUILD_TESTING)
     src/test/dbconnectionpool_test.cpp
     src/test/dbidtest.cpp
     src/test/directorydaotest.cpp
+    src/test/downbeatdetector_test.cpp
+    src/test/downbeatengine_test.cpp
     src/test/duration_test.cpp
     src/test/durationutiltest.cpp
     #TODO: write useful tests for refactored effects system

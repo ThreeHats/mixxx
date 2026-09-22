@@ -59,6 +59,7 @@ group name gives no address.
 | `/mixxx/ChannelN/file_bpm` | f | The rate of the beat grid of the file |
 | `/mixxx/ChannelN/rate` | f | The speed slider, -1 to +1 |
 | `/mixxx/ChannelN/beat_distance` | f | The part of the beat that is over, 0 to 1 |
+| `/mixxx/ChannelN/beat_in_bar` | f | The place of the beat in its bar, 1 to 4. 0 is unknown |
 | `/mixxx/ChannelN/volume` | f | The channel fader, 0 to 1 |
 | `/mixxx/ChannelN/mute` | f | 1 while the channel is mute |
 | `/mixxx/ChannelN/pregain` | f | The gain knob |
@@ -99,7 +100,7 @@ The length of the track is the control `duration`, in seconds.
 ## The beat message
 
 ```
-/mixxx/ChannelN/beat   h  i  f  i
+/mixxx/ChannelN/beat   h  i  f  i  i
 ```
 
 | Argument | Type | Meaning |
@@ -108,12 +109,17 @@ The length of the track is the control `duration`, in seconds.
 | 2 | i (int32) | The place of the beat in the beat grid of the track |
 | 3 | f (float) | The rate that the listener hears, in beats per minute |
 | 4 | i (int32) | A counter of the beats that this deck sent |
+| 5 | i (int32) | The place of the beat in its bar, 1 to 4. 0 means unknown |
 
 **The beat count.** Argument 2 counts from the anchor beat of the beat grid.
-For a track with one tempo, the anchor is the first downbeat of the grid, thus
-`beat % 4 == 0` marks a bar. For a track with tempo markers, the anchor is the
-first marker. A beat before the anchor gets a negative number. This count does
-not restart at a play press, and a loop moves it back.
+For a track with one tempo, the anchor is the beat that the grid holds. For a
+track with tempo markers, the anchor is the first marker. A beat before the
+anchor gets a negative number. This count does not restart at a play press,
+and a loop moves it back.
+
+**The bar.** Argument 5 is 1 on the first beat of a bar. It is 0 when the
+beat grid of the track holds no bar phase, which happens when nothing found
+the downbeat. See `tools/muxic/docs/downbeats.md`.
 
 Argument 4 rises by one on each beat that the deck sends, thus a gap in it
 says that a beat was lost. It starts again at 1 when the deck takes a new

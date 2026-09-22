@@ -10,6 +10,7 @@ DlgPrefBeats::DlgPrefBeats(QWidget* parent, UserSettingsPointer pConfig)
           m_bAnalyzerEnabled(m_bpmSettings.getBpmDetectionEnabledDefault()),
           m_bFixedTempoEnabled(m_bpmSettings.getFixedTempoAssumptionDefault()),
           m_bFastAnalysisEnabled(m_bpmSettings.getFastAnalysisDefault()),
+          m_bDetectDownbeats(m_bpmSettings.getDownbeatDetectionEnabledDefault()),
           m_bReanalyze(m_bpmSettings.getReanalyzeWhenSettingsChangeDefault()),
           m_bReanalyzeImported(m_bpmSettings.getReanalyzeImportedDefault()),
           m_stemStrategy(BeatDetectionSettings::StemStrategy::Disabled) {
@@ -55,6 +56,14 @@ DlgPrefBeats::DlgPrefBeats(QWidget* parent, UserSettingsPointer pConfig)
 #endif
             this,
             &DlgPrefBeats::fastAnalysisEnabled);
+    connect(checkBoxDetectDownbeats,
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+            &QCheckBox::checkStateChanged,
+#else
+            &QCheckBox::stateChanged,
+#endif
+            this,
+            &DlgPrefBeats::detectDownbeatsEnabled);
     connect(checkBoxReanalyze,
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
             &QCheckBox::checkStateChanged,
@@ -93,6 +102,7 @@ void DlgPrefBeats::slotResetToDefaults() {
     m_bAnalyzerEnabled = m_bpmSettings.getBpmDetectionEnabledDefault();
     m_bFixedTempoEnabled = m_bpmSettings.getFixedTempoAssumptionDefault();
     m_bFastAnalysisEnabled = m_bpmSettings.getFastAnalysisDefault();
+    m_bDetectDownbeats = m_bpmSettings.getDownbeatDetectionEnabledDefault();
     m_bReanalyze = m_bpmSettings.getReanalyzeWhenSettingsChangeDefault();
     m_bReanalyzeImported = m_bpmSettings.getReanalyzeImportedDefault();
     m_stemStrategy = m_bpmSettings.getStemStrategyDefault();
@@ -128,6 +138,16 @@ void DlgPrefBeats::fixedtempoEnabled(int i) {
     updateGui();
 }
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
+void DlgPrefBeats::detectDownbeatsEnabled(Qt::CheckState state) {
+    m_bDetectDownbeats = (state == Qt::Checked);
+#else
+void DlgPrefBeats::detectDownbeatsEnabled(int i) {
+    m_bDetectDownbeats = static_cast<bool>(i);
+#endif
+    updateGui();
+}
+
 void DlgPrefBeats::slotUpdate() {
     // Read true values from config
     m_selectedAnalyzerId = m_bpmSettings.getBeatPluginId();
@@ -136,6 +156,7 @@ void DlgPrefBeats::slotUpdate() {
     m_bReanalyze = m_bpmSettings.getReanalyzeWhenSettingsChange();
     m_bReanalyzeImported = m_bpmSettings.getReanalyzeImported();
     m_bFastAnalysisEnabled = m_bpmSettings.getFastAnalysis();
+    m_bDetectDownbeats = m_bpmSettings.getDownbeatDetectionEnabled();
     m_stemStrategy = m_bpmSettings.getStemStrategy();
 
     updateGui();
@@ -147,6 +168,7 @@ void DlgPrefBeats::updateGui() {
     checkBoxAnalyzerEnabled->setChecked(m_bAnalyzerEnabled);
     // Fast analysis cannot be combined with non-constant tempo beatgrids.
     checkBoxFastAnalysis->setEnabled(m_bAnalyzerEnabled && m_bFixedTempoEnabled);
+    checkBoxDetectDownbeats->setEnabled(m_bAnalyzerEnabled);
     checkBoxReanalyze->setEnabled(m_bAnalyzerEnabled);
     checkBoxReanalyzeImported->setEnabled(m_bAnalyzerEnabled);
 
@@ -177,6 +199,7 @@ void DlgPrefBeats::updateGui() {
     // Fast analysis cannot be combined with non-constant tempo beatgrids.
     checkBoxFastAnalysis->setChecked(m_bFastAnalysisEnabled && m_bFixedTempoEnabled);
 
+    checkBoxDetectDownbeats->setChecked(m_bDetectDownbeats);
     checkBoxReanalyze->setChecked(m_bReanalyze);
     checkBoxReanalyzeImported->setChecked(m_bReanalyzeImported);
 
@@ -235,5 +258,6 @@ void DlgPrefBeats::slotApply() {
     m_bpmSettings.setReanalyzeWhenSettingsChange(m_bReanalyze);
     m_bpmSettings.setReanalyzeImported(m_bReanalyzeImported);
     m_bpmSettings.setFastAnalysis(m_bFastAnalysisEnabled);
+    m_bpmSettings.setDownbeatDetectionEnabled(m_bDetectDownbeats);
     m_bpmSettings.setStemStrategy(m_stemStrategy);
 }

@@ -6,6 +6,7 @@
 
 #include "analyzer/analyzer.h"
 #include "analyzer/plugins/analyzerplugin.h"
+#include "muxic/downbeats/downbeatdetector.h"
 #include "preferences/beatdetectionsettings.h"
 #include "preferences/usersettings.h"
 
@@ -34,6 +35,7 @@ class AnalyzerBeats : public Analyzer {
 
     BeatDetectionSettings m_bpmSettings;
     std::unique_ptr<mixxx::AnalyzerBeatsPlugin> m_pPlugin;
+    std::unique_ptr<mixxx::DownbeatDetector> m_pDownbeatDetector;
     const bool m_enforceBpmDetection;
     QString m_pluginId;
     bool m_bPreferencesReanalyzeOldBpm;

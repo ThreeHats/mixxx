@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include "audio/frame.h"
 #include "engine/controls/enginecontrol.h"
@@ -27,7 +28,16 @@ class ClockControl: public EngineControl {
     void trackBeatsUpdated(mixxx::BeatsPointer pBeats) override;
 
   private:
+    /// Keep `beat_in_bar` on the beat that plays. It searches the grid only
+    /// when the play position leaves the beat that it reported last, thus a
+    /// seek and a loop wrap update it and a normal buffer does not.
+    void updateBeatInBar(mixxx::audio::FramePos currentPosition);
+
+    /// Report no bar and forget the beat that `beat_in_bar` reported.
+    void resetBeatInBar();
+
     std::unique_ptr<ControlObject> m_pCOBeatActive;
+    std::unique_ptr<ControlObject> m_pCOBeatInBar;
 
     // ControlObjects that come from LoopingControl
     std::unique_ptr<ControlProxy> m_pLoopEnabled;
@@ -41,6 +51,14 @@ class ClockControl: public EngineControl {
     mixxx::audio::FramePos m_prevBeatPosition;
     mixxx::audio::FramePos m_nextBeatPosition;
     mixxx::audio::FrameDiff_t m_blinkIntervalFrames;
+
+    // The beat that `beat_in_bar` reports: the range that it covers, its
+    // place in the grid, and an iterator that steps with it. The iterator
+    // keeps a grid with tempo markers off a walk on each beat.
+    mixxx::audio::FramePos m_beatInBarStartPosition;
+    mixxx::audio::FramePos m_beatInBarEndPosition;
+    std::optional<mixxx::Beats::ConstIterator> m_beatIterator;
+    int m_beatIndex;
 
     enum class StateMachine : int {
         afterBeatDirectionChanged =
