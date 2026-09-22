@@ -27,6 +27,9 @@ const QString kOutputPlaceholder = QStringLiteral("OUTPUT");
 const QString kOutputFileName = QStringLiteral("downbeats.txt");
 // The end of the error output that a failure report carries.
 constexpr int kErrorTailChars = 400;
+// A beat list of a twenty minute track is near 50 kB. A program that writes
+// more than this writes something else.
+constexpr int kMaxOutputBytes = 16 * 1024 * 1024;
 
 } // anonymous namespace
 
@@ -261,35 +264,56 @@ bool ExternalDownbeatDetector::runCommand(const QString& trackFilePath, QString*
         return false;
     }
 
+    // A pipe that nobody reads holds the program at about 64 kB, thus the
+    // wait reads both channels each time around.
+    QByteArray standardOutput;
+    QByteArray errorTail;
+    bool tooMuchOutput = false;
+    const auto readChannels = [&]() {
+        standardOutput.append(process.readAllStandardOutput());
+        if (standardOutput.size() > kMaxOutputBytes) {
+            tooMuchOutput = true;
+            standardOutput.truncate(kMaxOutputBytes);
+        }
+        errorTail.append(process.readAllStandardError());
+        if (errorTail.size() > kErrorTailChars) {
+            errorTail = errorTail.right(kErrorTailChars);
+        }
+    };
+
     QElapsedTimer runTimer;
     runTimer.start();
     const qint64 timeoutMilliseconds =
             static_cast<qint64>(m_settings.timeoutSeconds()) * 1000;
     while (!process.waitForFinished(kPollMilliseconds)) {
+        readChannels();
         if (process.state() == QProcess::NotRunning) {
             break;
         }
         const bool cancelled = m_cancelCheck && m_cancelCheck();
-        if (!cancelled && runTimer.elapsed() < timeoutMilliseconds) {
+        if (!cancelled && !tooMuchOutput && runTimer.elapsed() < timeoutMilliseconds) {
             continue;
         }
         process.kill();
         process.waitForFinished(kStartMilliseconds);
-        m_errorMessage = cancelled
-                ? QObject::tr("The analysis of the track stopped.")
-                : QObject::tr("The program \"%1\" ran longer than %2 seconds.")
-                          .arg(program)
-                          .arg(m_settings.timeoutSeconds());
+        if (cancelled) {
+            m_errorMessage = QObject::tr("The analysis of the track stopped.");
+        } else if (tooMuchOutput) {
+            m_errorMessage = QObject::tr("The program \"%1\" wrote too much.").arg(program);
+        } else {
+            m_errorMessage = QObject::tr("The program \"%1\" ran longer than %2 seconds.")
+                                     .arg(program)
+                                     .arg(m_settings.timeoutSeconds());
+        }
         return false;
     }
+    readChannels();
 
     if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-        const QString errorTail =
-                QString::fromUtf8(process.readAllStandardError()).right(kErrorTailChars);
         m_errorMessage = QObject::tr("\"%1\" stopped with the code %2. %3")
                                  .arg(program,
                                          QString::number(process.exitCode()),
-                                         errorTail.trimmed());
+                                         QString::fromUtf8(errorTail).trimmed());
         return false;
     }
 
@@ -301,7 +325,7 @@ bool ExternalDownbeatDetector::runCommand(const QString& trackFilePath, QString*
         *pOutput = QString::fromUtf8(outputFile.readAll());
         return true;
     }
-    *pOutput = QString::fromUtf8(process.readAllStandardOutput());
+    *pOutput = QString::fromUtf8(standardOutput);
     if (pOutput->trimmed().isEmpty()) {
         m_errorMessage = QObject::tr("The program \"%1\" wrote nothing.").arg(program);
         return false;
