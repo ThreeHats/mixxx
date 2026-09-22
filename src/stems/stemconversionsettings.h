@@ -5,6 +5,7 @@
 #include <QStringList>
 
 #include "preferences/usersettings.h"
+#include "util/commandtemplate.h"
 
 namespace mixxx {
 
@@ -98,12 +99,6 @@ class StemConversionSettings {
     StemOutputMode m_outputMode = StemOutputMode::SourceDirectory;
     QString m_outputDirectory;
 };
-
-/// Split a command template into a program and its arguments, and put the
-/// value of each placeholder in place. Returns an empty list on an error.
-QStringList expandCommandTemplate(const QString& commandTemplate,
-        const QMap<QString, QString>& placeholders,
-        QString* pErrorMessage);
 
 /// The name of a stem in the stem manifest, for example "Drums".
 QString stemRoleName(StemRole role);
