@@ -428,6 +428,33 @@ TEST_F(RelatedDecksModelTest, theExtraColumnsCarryNoCheckBoxAndNoIcon) {
     }
 }
 
+TEST_F(RelatedDecksModelTest, theRatingOfADeckViewIsReadOnly) {
+    const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    const TrackId other = addTrack(QStringLiteral("-jpg.mp3"),
+            0.0,
+            mixxx::track::io::key::INVALID);
+    ASSERT_TRUE(other.isValid());
+    relate(deck1, other, 4);
+
+    // The delegate of the stars opens its editor on a cell that the user
+    // may change. The node of the sidebar has one.
+    m_model.selectRelatedTo(deck1);
+    ASSERT_EQ(1, m_model.rowCount());
+    int column = m_model.fieldIndex(QStringLiteral("relation_rating"));
+    ASSERT_GE(column, 0);
+    EXPECT_TRUE(m_model.flags(m_model.index(0, column))
+                        .testFlag(Qt::ItemIsEditable));
+
+    m_model.selectRelatedToDecks(muxic::DeckTrackList{muxic::DeckTrack{1, deck1}});
+    ASSERT_EQ(1, m_model.rowCount());
+    column = m_model.fieldIndex(QStringLiteral("relation_rating"));
+    ASSERT_GE(column, 0);
+    EXPECT_FALSE(m_model.flags(m_model.index(0, column))
+                         .testFlag(Qt::ItemIsEditable));
+}
+
 TEST_F(RelatedDecksModelTest, theBestRelationOfADeckComesFirst) {
     const TrackId deck1 = addTrack(QStringLiteral("-png.mp3"),
             0.0,
