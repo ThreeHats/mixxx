@@ -10,8 +10,11 @@
 class QPaintEvent;
 
 namespace {
-// A track with a bar phase draws the beat lines weaker than the bar lines.
-constexpr float kBeatAlphaFactor = 0.6f;
+// The bar line of this renderer is wider than the beat line. It cannot be
+// weaker, because `drawLines` with an alpha under 1 paints one large
+// rectangle on the QOpenGLWindow, which is why the code above forces the
+// alpha to 1.
+constexpr double kBarLineWidthFactor = 2.0;
 } // namespace
 
 WaveformRenderBeat::WaveformRenderBeat(WaveformWidgetRenderer* waveformWidgetRenderer)
@@ -120,22 +123,17 @@ void WaveformRenderBeat::draw(QPainter* painter, QPaintEvent* /*event*/) {
         }
     }
 
-    QColor beatColor = m_beatColor;
-    if (barPhase) {
-        // A track with a bar phase draws the beat lines weaker than the bar
-        // lines. Without a bar phase the lines keep the alpha of the skin.
-        beatColor.setAlphaF(m_beatColor.alphaF() * kBeatAlphaFactor);
-    }
+    const double lineWidth = std::max(1.0, scaleFactor());
 
-    QPen beatPen(beatColor);
-    beatPen.setWidthF(std::max(1.0, scaleFactor()));
+    QPen beatPen(m_beatColor);
+    beatPen.setWidthF(lineWidth);
     painter->setPen(beatPen);
     // Make sure to use constData to prevent detaches!
     painter->drawLines(m_beats.constData(), beatCount);
 
     if (downbeatCount > 0) {
         QPen downbeatPen(m_beatColor);
-        downbeatPen.setWidthF(std::max(1.0, scaleFactor()));
+        downbeatPen.setWidthF(lineWidth * kBarLineWidthFactor);
         painter->setPen(downbeatPen);
         painter->drawLines(m_downbeats.constData(), downbeatCount);
     }

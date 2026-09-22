@@ -17,8 +17,6 @@
 using namespace rendergraph;
 
 namespace {
-// A track with a bar phase draws the beat lines weaker than the bar lines.
-// Without a bar phase the lines keep the alpha of the skin.
 constexpr float kBeatAlphaFactor = 0.6f;
 } // namespace
 
@@ -131,6 +129,8 @@ bool WaveformRenderBeat::preprocessInner() {
             ? rendererBreadth / static_cast<float>(mixxx::kMaxSupportedStems)
             : rendererBreadth;
 
+    // A track with a bar phase draws the beat lines weaker than the bar
+    // lines. Without a phase every line keeps the alpha of the skin.
     const QVector4D barColor{static_cast<float>(m_color.redF()),
             static_cast<float>(m_color.greenF()),
             static_cast<float>(m_color.blueF()),
