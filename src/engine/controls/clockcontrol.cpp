@@ -29,6 +29,7 @@ ClockControl::ClockControl(const QString& group, UserSettingsPointer pConfig)
           m_blinkIntervalFrames(0.0),
           m_beatInBarStartPosition(mixxx::audio::kInvalidFramePos),
           m_beatInBarEndPosition(mixxx::audio::kInvalidFramePos),
+          m_beatIndex(0),
           m_internalState(StateMachine::outsideIndicationArea) {
     m_pCOBeatActive->setReadOnly();
     m_pCOBeatActive->forceSet(0.0);
@@ -50,20 +51,24 @@ void ClockControl::trackLoaded(TrackPointer pNewTrack) {
 void ClockControl::trackBeatsUpdated(mixxx::BeatsPointer pBeats) {
     // Clear on-beat control
     m_pCOBeatActive->forceSet(0.0);
-    m_pCOBeatInBar->forceSet(0.0);
+    resetBeatInBar();
+    m_pBeats = pBeats;
+}
+
+void ClockControl::resetBeatInBar() {
     m_beatInBarStartPosition = mixxx::audio::kInvalidFramePos;
     m_beatInBarEndPosition = mixxx::audio::kInvalidFramePos;
-    m_pBeats = pBeats;
+    m_beatIterator.reset();
+    m_beatIndex = 0;
+    if (m_pCOBeatInBar->get() != 0.0) {
+        m_pCOBeatInBar->forceSet(0.0);
+    }
 }
 
 void ClockControl::updateBeatInBar(mixxx::audio::FramePos currentPosition) {
     const mixxx::BeatsPointer pBeats = m_pBeats;
     if (!pBeats || !pBeats->barPhase() || !currentPosition.isValid()) {
-        m_beatInBarStartPosition = mixxx::audio::kInvalidFramePos;
-        m_beatInBarEndPosition = mixxx::audio::kInvalidFramePos;
-        if (m_pCOBeatInBar->get() != 0.0) {
-            m_pCOBeatInBar->forceSet(0.0);
-        }
+        resetBeatInBar();
         return;
     }
 
@@ -73,11 +78,39 @@ void ClockControl::updateBeatInBar(mixxx::audio::FramePos currentPosition) {
         return;
     }
 
-    pBeats->findPrevNextBeats(currentPosition,
-            &m_beatInBarStartPosition,
-            &m_beatInBarEndPosition,
-            false);
-    m_pCOBeatInBar->forceSet(pBeats->beatInBarAt(currentPosition));
+    mixxx::Beats::ConstIterator it = pBeats->iteratorFrom(currentPosition);
+    if (it == pBeats->cend()) {
+        resetBeatInBar();
+        return;
+    }
+    if (*it > currentPosition) {
+        if (it == pBeats->cbegin()) {
+            resetBeatInBar();
+            return;
+        }
+        it = it - 1;
+    }
+
+    // Play moves the deck one beat onward, thus only a seek or a loop wrap
+    // needs a walk of the grid for the index.
+    if (m_beatIterator) {
+        mixxx::Beats::ConstIterator stepped = *m_beatIterator;
+        ++stepped;
+        m_beatIndex = (stepped == it) ? m_beatIndex + 1 : pBeats->beatIndex(it);
+    } else {
+        m_beatIndex = pBeats->beatIndex(it);
+    }
+    m_beatIterator = it;
+
+    mixxx::Beats::ConstIterator next = it;
+    ++next;
+    m_beatInBarStartPosition = *it;
+    m_beatInBarEndPosition = *next;
+
+    const double value = pBeats->beatInBar(m_beatIndex);
+    if (m_pCOBeatInBar->get() != value) {
+        m_pCOBeatInBar->forceSet(value);
+    }
 }
 
 void ClockControl::updateIndicators(const double dRate,
