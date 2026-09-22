@@ -300,15 +300,18 @@ columns are read-only here. To change a relation, use the sidebar node or
 the track menu.
 
 The panel has one order: the deck, then the rating of the relation, then
-the artist. A click on the header sorts nothing, and the panel takes no
-sort column from `[Library],sort_column`. The library table owns that
-control.
+the artist. A click on the header of the panel sorts nothing, and the
+panel takes no sort column from `[Library],sort_column`. The library
+table owns that control. The sidebar node keeps its sort by a click.
+
+A track that a deck holds has no row, in both modes. It plays already.
 
 ### The two buttons of the panel
 
 "Related" shows the relations. "Suggestions" shows the tracks that fit the
 tempo and the key of each deck, with the rules of Suggestions below. The
-panel starts on "Related".
+panel starts on the button that `[Library] related_panel_suggestions`
+holds, which is "Related" until you push "Suggestions" one time.
 
 ### The panel and the decks
 
@@ -316,6 +319,15 @@ The panel reads its table again when a deck takes or gives back a track,
 when the count of the decks changes, and when a relation changes. A read
 waits 150 ms, thus a load of two decks takes one read. A panel that is off
 reads nothing and reads one time when it comes back.
+
+Only a write that Mixxx makes reports a change of the relations. A write
+that the muxic hub makes in the table shows in the panel at the next deck
+change or at the next start of Mixxx.
+
+Each deck change writes the view of the deck mode again: a DROP and a
+CREATE on the database connection that the library shares. This throws
+away the prepared statements of that connection, thus the read after a
+deck change costs more than a read of the library table.
 
 ### Config keys
 
@@ -402,11 +414,13 @@ under `[Library]` in the `.kbd.cfg` file.
 | `src/muxic/relatedtracks/relatedtracksfeature.{h,cpp}` | The sidebar node and the control |
 | `src/muxic/relatedtracks/decktrack.h` | A deck and the track on it |
 | `src/muxic/relatedtracks/relateddeckwatcher.{h,cpp}` | When the panel reads its table again |
+| `src/muxic/relatedtracks/panelplacement.{h,cpp}` | The place of the panel in the splitter |
 | `src/muxic/relatedtracks/relatedtrackspanel.{h,cpp}` | The panel under the library table |
 | `src/test/trackrelationstorage_test.cpp` | The DAO tests |
 | `src/test/relationsuggester_test.cpp` | The tempo and key rules |
 | `src/test/relatedtracksmodel_test.cpp` | The SQL of the views and the edits |
 | `src/test/relateddeckwatcher_test.cpp` | The decks and the read policy of the panel |
+| `src/test/panelplacement_test.cpp` | The height of the panel and its toggle |
 
 The fork code is in the namespace `muxic`.
 
@@ -420,17 +434,19 @@ sort expression of a table column and a write into the cache of a row),
 `src/library/tabledelegates/stardelegate.h` (`paintItem` is virtual),
 `res/mixxx.qrc` (the icon) and `CMakeLists.txt`.
 
-The panel adds four more: `src/skin/legacy/legacyskinparser.cpp` (one line
-at the end of `parseLibrary`, which puts the library widget and the panel
-in a splitter), `src/skin/skincontrols.{h,cpp}` (the control and its
-alias), `src/widget/wmainmenubar.cpp` (the View entry) and
+The panel adds five more: `src/skin/legacy/legacyskinparser.cpp` (an
+include and five lines at the end of `parseLibrary`, which put the
+library widget and the panel in a splitter),
+`src/library/tabledelegates/stardelegate.h` (`cellEntered` is virtual),
+`src/skin/skincontrols.{h,cpp}` (the control and its alias),
+`src/widget/wmainmenubar.cpp` (the View entry) and
 `res/keyboard/en_US.kbd.cfg` (the shortcut).
 
 ## What is not done
 
-- The relation columns have no `SortColumnId`, thus a controller cannot
-  select them with `[Library],sort_column`. A click on the header sorts
-  them.
+- The relation columns of the sidebar node have no `SortColumnId`, thus a
+  controller cannot select them with `[Library],sort_column`. A click on
+  the header of the node sorts them.
 - A relation can only be made with the track menu or the control. There is
   no way to make one from the Related view itself.
 - The Suggestions view does not read the tags or the genre.
@@ -442,3 +458,11 @@ alias), `src/widget/wmainmenubar.cpp` (the View entry) and
   track" follow the library table only.
 - The panel takes no part in the focus chain of `[Library]`. The keyboard
   reaches it with Tab or with a click.
+- The QML skin gets no panel. The control, the menu entry and Ctrl+8 are
+  there, and they do nothing. Only a skin of the legacy parser has the
+  panel.
+- The Overview column of the panel draws with the default signal colors.
+  The delegate reads the colors from the `WLibrary` above it, and the
+  table of the panel stands next to that widget and not under it. The
+  column is hidden in the panel, thus this shows only after you put the
+  column in with the menu of the header.
