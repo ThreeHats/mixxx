@@ -145,6 +145,7 @@ void DlgPrefBeats::detectDownbeatsEnabled(Qt::CheckState state) {
 void DlgPrefBeats::detectDownbeatsEnabled(int i) {
     m_bDetectDownbeats = static_cast<bool>(i);
 #endif
+    updateGui();
 }
 
 void DlgPrefBeats::slotUpdate() {

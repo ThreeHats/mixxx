@@ -108,7 +108,7 @@ qint32 BeatControl::beatIndex(
     }
     const mixxx::Beats::ConstIterator it = pBeats->iteratorFrom(position);
     m_beatIterator = it;
-    m_beatIndex = static_cast<qint32>(it - pBeats->cfirstmarker());
+    m_beatIndex = static_cast<qint32>(pBeats->beatIndex(it));
     return m_beatIndex;
 }
 

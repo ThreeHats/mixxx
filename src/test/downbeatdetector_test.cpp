@@ -117,9 +117,7 @@ TEST(DownbeatDetectorTest, TheScoreTakesThePhaseWithTheLargestChange) {
 
 TEST(DownbeatDetectorTest, AFlatScoreTakesNoPhase) {
     // Every fourth transition is large, but they fall on no single phase.
-    const std::vector<double> beatSd{1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1,
-            0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1,
-            0.1, 1.0, 0.1};
+    const std::vector<double> beatSd{1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1};
     const DownbeatPhase phase = DownbeatDetector::scorePhases(beatSd, 4);
     EXPECT_FALSE(phase.accepted);
 }

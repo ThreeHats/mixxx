@@ -1570,8 +1570,11 @@ void WTrackMenu::slotSetDownbeat() {
         return;
     }
     // The engine thread knows the play position of the deck to the frame,
-    // thus the control does the work.
-    ControlObject::set(ConfigKey(m_deckGroup, QStringLiteral("beats_set_downbeat")), 1.0);
+    // thus the control does the work. A push button takes a press and a
+    // release.
+    const ConfigKey key(m_deckGroup, QStringLiteral("beats_set_downbeat"));
+    ControlObject::set(key, 1.0);
+    ControlObject::set(key, 0.0);
 }
 
 void WTrackMenu::slotImportMetadataFromFileTags() {

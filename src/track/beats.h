@@ -4,8 +4,6 @@
 #include <QList>
 #include <QString>
 #include <QVector>
-#include <algorithm>
-#include <cmath>
 #include <memory>
 #include <optional>
 
@@ -62,13 +60,7 @@ class BarPhase {
   public:
     static constexpr int kDefaultBeatsPerBar = 4;
 
-    explicit BarPhase(int downbeatOffset, int beatsPerBar = kDefaultBeatsPerBar)
-            : m_beatsPerBar(std::max(1, beatsPerBar)) {
-        m_downbeatOffset = static_cast<int>(
-                ((static_cast<long long>(downbeatOffset) % m_beatsPerBar) +
-                        m_beatsPerBar) %
-                m_beatsPerBar);
-    }
+    explicit BarPhase(int downbeatOffset, int beatsPerBar = kDefaultBeatsPerBar);
 
     /// The grid index of the first downbeat, from 0 to `beatsPerBar() - 1`.
     int downbeatOffset() const {
@@ -94,10 +86,7 @@ class BarPhase {
 
     /// The phase after a change of the beat length by `bpmScaleFactor`. A
     /// factor that is no whole number of beats rounds to the nearest beat.
-    BarPhase scaled(double bpmScaleFactor) const {
-        return BarPhase(static_cast<int>(std::lround(m_downbeatOffset * bpmScaleFactor)),
-                m_beatsPerBar);
-    }
+    BarPhase scaled(double bpmScaleFactor) const;
 
   private:
     int m_downbeatOffset;
@@ -314,12 +303,14 @@ class Beats : private std::enable_shared_from_this<Beats> {
             audio::SampleRate sampleRate,
             audio::FramePos position,
             Bpm bpm,
-            const QString& subVersion = QString());
+            const QString& subVersion = QString(),
+            const std::optional<BarPhase>& barPhase = std::nullopt);
 
     static mixxx::BeatsPointer fromBeatPositions(
             audio::SampleRate sampleRate,
             const QVector<audio::FramePos>& beatPositions,
-            const QString& subVersion = QString());
+            const QString& subVersion = QString(),
+            const std::optional<BarPhase>& barPhase = std::nullopt);
 
     static mixxx::BeatsPointer fromBeatMarkers(
             audio::SampleRate sampleRate,
