@@ -183,6 +183,7 @@ class WTrackMenu : public QMenu {
     void slotUndoBeatsChange();
     void slotTranslateBeatsHalf();
     void slotSetDownbeat();
+    void slotDetectDownbeats();
 
     // Hotcues
     void slotSortHotcuesByPosition(HotcueSortMode sortMode);
@@ -367,6 +368,7 @@ class WTrackMenu : public QMenu {
     parented_ptr<QAction> m_pBpmUndoAction;
     parented_ptr<QAction> m_pTranslateBeatsHalf;
     parented_ptr<QAction> m_pSetDownbeatAction;
+    parented_ptr<QAction> m_pDetectDownbeatsAction;
 
     // Track rating and color
     parented_ptr<WStarRatingAction> m_pStarRatingAction;

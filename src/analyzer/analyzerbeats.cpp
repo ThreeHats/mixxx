@@ -32,13 +32,19 @@ mixxx::AnalyzerPluginInfo AnalyzerBeats::defaultPlugin() {
 
 AnalyzerBeats::AnalyzerBeats(UserSettingsPointer pConfig, bool enforceBpmDetection)
         : m_bpmSettings(pConfig),
+          m_downbeatSettings(mixxx::ExternalDownbeatSettings::readFrom(pConfig)),
           m_enforceBpmDetection(enforceBpmDetection),
           m_bPreferencesReanalyzeOldBpm(false),
           m_bPreferencesReanalyzeImported(false),
           m_bPreferencesFixedTempo(true),
           m_bPreferencesFastAnalysis(false),
+          m_downbeatOnly(false),
           m_maxFramesToProcess(0),
           m_currentFrame(0) {
+}
+
+void AnalyzerBeats::setCancelCheck(std::function<bool()> cancelCheck) {
+    m_cancelCheck = std::move(cancelCheck);
 }
 
 bool AnalyzerBeats::initialize(const AnalyzerTrack& track,
@@ -49,17 +55,35 @@ bool AnalyzerBeats::initialize(const AnalyzerTrack& track,
         return false;
     }
 
-    bool bPreferencesBeatDetectionEnabled =
-            m_enforceBpmDetection || m_bpmSettings.getBpmDetectionEnabled();
+    bool bpmLock = track.getTrack()->isBpmLocked();
+    if (bpmLock) {
+        qDebug() << "Track is BpmLocked: Beat calculation will not start";
+        return false;
+    }
+
+    m_downbeatOnly = track.getOptions().downbeatOnly;
+    bool bPreferencesBeatDetectionEnabled = m_enforceBpmDetection ||
+            m_downbeatOnly || m_bpmSettings.getBpmDetectionEnabled();
     if (!bPreferencesBeatDetectionEnabled) {
         qDebug() << "Beat calculation is deactivated";
         return false;
     }
 
-    bool bpmLock = track.getTrack()->isBpmLocked();
-    if (bpmLock) {
-        qDebug() << "Track is BpmLocked: Beat calculation will not start";
-        return false;
+    if (m_downbeatOnly) {
+        // The grid stays. The detector works against the beats that the
+        // track has, thus a track with no grid has nothing to work with.
+        if (!track.getTrack()->getBeats()) {
+            qDebug() << "Downbeat detection needs a beat grid: skipping"
+                     << track.getTrack()->getLocation();
+            return false;
+        }
+        m_sampleRate = sampleRate;
+        m_channelCount = channelCount;
+        m_maxFramesToProcess = frameLength;
+        m_currentFrame = 0;
+        m_pDownbeatDetector = std::make_unique<mixxx::DownbeatDetector>(
+                m_sampleRate, mixxx::BarPhase::kDefaultBeatsPerBar);
+        return true;
     }
 
     m_bPreferencesFixedTempo = track.getOptions().useFixedTempo.value_or(
@@ -206,7 +230,7 @@ bool AnalyzerBeats::shouldAnalyze(TrackPointer pTrack) const {
 }
 
 bool AnalyzerBeats::processSamples(const CSAMPLE* pIn, SINT count) {
-    VERIFY_OR_DEBUG_ASSERT(m_pPlugin) {
+    VERIFY_OR_DEBUG_ASSERT(m_pPlugin || m_downbeatOnly) {
         return false;
     }
 
@@ -252,7 +276,7 @@ bool AnalyzerBeats::processSamples(const CSAMPLE* pIn, SINT count) {
                              : static_cast<int>(m_channelCount));
     }
 
-    bool ret = m_pPlugin->processSamples(pBeatInput, count);
+    bool ret = m_pPlugin ? m_pPlugin->processSamples(pBeatInput, count) : true;
     if (pDrumChannel) {
         SampleUtil::free(pDrumChannel);
     }
@@ -265,6 +289,11 @@ void AnalyzerBeats::cleanup() {
 }
 
 void AnalyzerBeats::storeResults(TrackPointer pTrack) {
+    if (m_downbeatOnly) {
+        storeDownbeatOnly(pTrack);
+        return;
+    }
+
     VERIFY_OR_DEBUG_ASSERT(m_pPlugin) {
         return;
     }
@@ -299,19 +328,65 @@ void AnalyzerBeats::storeResults(TrackPointer pTrack) {
         pBeats = mixxx::Beats::fromConstTempo(m_sampleRate, mixxx::audio::kStartFramePos, bpm);
     }
 
-    if (pBeats && m_pDownbeatDetector && !beats.isEmpty()) {
-        const mixxx::DownbeatPhase phase = m_pDownbeatDetector->finalize(beats);
-        qDebug() << "AnalyzerBeats downbeat detection: accepted" << phase.accepted
-                 << "phase" << phase.phase << "confidence" << phase.confidence;
-        if (phase.accepted && phase.phase < beats.size()) {
-            const auto pWithBarPhase = pBeats->trySetDownbeatNear(beats.at(phase.phase));
-            if (pWithBarPhase) {
-                pBeats = *pWithBarPhase;
-            }
-        }
+    if (pBeats && !beats.isEmpty() && m_bpmSettings.getDownbeatDetectionEnabled()) {
+        pBeats = detectDownbeat(pTrack, pBeats, beats);
     }
 
     pTrack->trySetBeats(pBeats);
+}
+
+void AnalyzerBeats::storeDownbeatOnly(const TrackPointer& pTrack) {
+    const mixxx::BeatsPointer pBeats = pTrack->getBeats();
+    if (!pBeats) {
+        return;
+    }
+    const mixxx::audio::FramePos endPosition{
+            pTrack->getDuration() * pBeats->getSampleRate()};
+    const QVector<mixxx::audio::FramePos> beatPositions =
+            mixxx::gridBeatPositions(*pBeats, endPosition);
+    if (beatPositions.isEmpty()) {
+        return;
+    }
+    const mixxx::BeatsPointer pWithBarPhase =
+            detectDownbeat(pTrack, pBeats, beatPositions);
+    if (pWithBarPhase != pBeats) {
+        pTrack->trySetBeats(pWithBarPhase);
+    }
+}
+
+mixxx::BeatsPointer AnalyzerBeats::detectDownbeat(const TrackPointer& pTrack,
+        const mixxx::BeatsPointer& pBeats,
+        const QVector<mixxx::audio::FramePos>& beatPositions) {
+    const QString location = pTrack->getLocation();
+    mixxx::DownbeatPhase phase;
+    QString source;
+    if (m_downbeatSettings.detector() ==
+            mixxx::DownbeatDetectorChoice::ExternalCommand) {
+        mixxx::ExternalDownbeatDetector detector(
+                m_downbeatSettings, mixxx::BarPhase::kDefaultBeatsPerBar);
+        detector.setCancelCheck(m_cancelCheck);
+        phase = detector.detect(location, beatPositions, m_sampleRate);
+        source = QStringLiteral("external");
+        if (!phase.accepted) {
+            qWarning() << "muxic downbeat: the external command gave no phase for"
+                       << location << ":" << detector.errorMessage();
+        }
+    }
+    if (!phase.accepted && m_pDownbeatDetector) {
+        phase = m_pDownbeatDetector->finalize(beatPositions);
+        source = QStringLiteral("built in");
+    }
+    if (source.isEmpty()) {
+        return pBeats;
+    }
+    qDebug() << "muxic downbeat:" << location << "source" << source
+             << "accepted" << phase.accepted << "phase" << phase.phase
+             << "confidence" << phase.confidence;
+    if (!phase.accepted || phase.phase >= beatPositions.size()) {
+        return pBeats;
+    }
+    const auto pWithBarPhase = pBeats->trySetDownbeatNear(beatPositions.at(phase.phase));
+    return pWithBarPhase ? *pWithBarPhase : pBeats;
 }
 
 // static

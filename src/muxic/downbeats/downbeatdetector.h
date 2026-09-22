@@ -12,6 +12,8 @@ class DownBeat;
 
 namespace mixxx {
 
+class Beats;
+
 /// The bar phase that the detector found in one track.
 struct DownbeatPhase {
     /// The place of the first downbeat in the beat list, from 0 to the beats
@@ -56,11 +58,17 @@ class DownbeatDetector {
     /// Score the phase candidates of a list of beat to beat differences.
     /// `beatSd[i]` is the change of the audio between the beat `i` and the
     /// beat `i + 1`. Each bar votes for the transition that changed the audio
-    /// most. Under no bar structure the votes for one phase follow a binomial
-    /// law with the chance 1 / beatsPerBar, thus the result counts as found
-    /// only when the votes stand `kSigmaFactor` standard deviations over that
-    /// chance.
+    /// most, and `scoreVotes` decides.
     static DownbeatPhase scorePhases(const std::vector<double>& beatSd, int beatsPerBar);
+
+    /// Apply the significance test to a vote histogram. `votes[p]` counts the
+    /// bars that called the phase `p` the first beat of the bar, and the size
+    /// of the list is the beats of a bar. A phase below zero lets the phase
+    /// with the most votes win. Under no bar structure the votes for one
+    /// phase follow a binomial law with the chance 1 / beats of a bar, thus
+    /// the result counts as found only when the votes stand `kSigmaFactor`
+    /// standard deviations over that chance.
+    static DownbeatPhase scoreVotes(const std::vector<int>& votes, int phase = -1);
 
   private:
     /// The frames that one block carries. The bar tracker needs blocks of one
@@ -75,5 +83,11 @@ class DownbeatDetector {
     int m_blockFill;
     int m_blocksPushed;
 };
+
+/// The positions of the beats of `beats` from the track start to
+/// `endPosition`. A grid holds beats before the track and after it, thus a
+/// caller that wants a beat list must give an end.
+QVector<audio::FramePos> gridBeatPositions(
+        const Beats& beats, audio::FramePos endPosition);
 
 } // namespace mixxx

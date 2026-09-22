@@ -592,6 +592,15 @@ void WTrackMenu::createActions() {
         });
     }
 
+    if (featureIsEnabled(Feature::BPM) && featureIsEnabled(Feature::Analyze)) {
+        m_pDetectDownbeatsAction =
+                make_parented<QAction>(tr("Detect Downbeats"), m_pBPMMenu);
+        connect(m_pDetectDownbeatsAction,
+                &QAction::triggered,
+                this,
+                &WTrackMenu::slotDetectDownbeats);
+    }
+
     if (featureIsEnabled(Feature::Analyze)) {
         m_pAnalyzeAction = make_parented<QAction>(tr("Analyze"), this);
         connect(m_pAnalyzeAction, &QAction::triggered, this, &WTrackMenu::slotAnalyze);
@@ -716,10 +725,15 @@ void WTrackMenu::setupActions() {
         m_pBPMMenu->addAction(m_pBpmFourThirdsAction);
         m_pBPMMenu->addAction(m_pBpmThreeHalvesAction);
         m_pBPMMenu->addAction(m_pBpmDoubleAction);
-        if (m_pTranslateBeatsHalf) {
+        if (m_pTranslateBeatsHalf || m_pDetectDownbeatsAction) {
             m_pBPMMenu->addSeparator();
+        }
+        if (m_pTranslateBeatsHalf) {
             m_pBPMMenu->addAction(m_pTranslateBeatsHalf);
             m_pBPMMenu->addAction(m_pSetDownbeatAction);
+        }
+        if (m_pDetectDownbeatsAction) {
+            m_pBPMMenu->addAction(m_pDetectDownbeatsAction);
         }
         m_pBPMMenu->addSeparator();
         m_pBPMMenu->addAction(m_pBpmLockAction);
@@ -1575,6 +1589,12 @@ void WTrackMenu::slotSetDownbeat() {
     const ConfigKey key(m_deckGroup, QStringLiteral("beats_set_downbeat"));
     ControlObject::set(key, 1.0);
     ControlObject::set(key, 0.0);
+}
+
+void WTrackMenu::slotDetectDownbeats() {
+    AnalyzerTrack::Options options;
+    options.downbeatOnly = true;
+    addToAnalysis(options);
 }
 
 void WTrackMenu::slotImportMetadataFromFileTags() {

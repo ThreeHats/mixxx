@@ -1515,6 +1515,7 @@ add_library(
   src/musicbrainz/web/coverartarchivelinkstask.cpp
   src/musicbrainz/web/musicbrainzrecordingstask.cpp
   src/muxic/downbeats/downbeatdetector.cpp
+  src/muxic/downbeats/externaldownbeatdetector.cpp
   src/muxic/librarycolumns/librarycolumns.cpp
   src/muxic/librarycolumns/searchfilters.cpp
   src/muxic/librarycolumns/trackmeta.cpp
