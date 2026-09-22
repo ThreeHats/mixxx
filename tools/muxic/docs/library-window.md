@@ -29,6 +29,7 @@ position and the same screen.
 | Control | Type | Default | Use |
 |---|---|---|---|
 | `[Skin],show_library_window` | toggle button, persistent | 0 | 1 puts the library in its own window |
+| `[Skin],show_maximized_library` | toggle button, persistent | 0 | 1 shows the maximized page. The alias is `[Master],maximize_library`. The fork keeps it at 0 while the library is out |
 
 A controller mapping can bind the control. The control is in the `[Skin]`
 group with `show_maximized_library` and the other view controls, and Mixxx
@@ -76,7 +77,33 @@ by 700 in the center of the primary screen.
 - A skin reload and a skin change. Mixxx puts the library back in the old skin
   first, then takes the library area of the new skin and opens the window
   again.
-- The "Maximize Library" toggle of the main window.
+
+## Maximize Library while the library is out
+
+The maximized page of a skin holds the small decks and the place of the
+library. While the library is in its own window, that place is empty, thus the
+page shows almost nothing. The fork stops the page in that state:
+
+- The View menu entry "Maximize Library" is grey, thus the `Space` key does
+  nothing.
+- The control `[Skin],show_maximized_library` gets 0 back on the next turn of
+  the event loop. A controller pad, a skin button such as "BIG LIBRARY" of
+  LateNight, or the alias `[Master],maximize_library` that a controller
+  mapping uses, can still set it to 1. The skin thus goes to the maximized
+  page and comes back one turn later. In most cases the window draws neither
+  page, because the turn comes before the next frame. On a slow frame you see
+  the page one time. The waveforms of the main window go away and come back
+  with it, and the keyboard focus can move.
+- A library that goes out while the page is maximized gives the usual page
+  back first. The state does not come back when the library returns: the
+  control keeps the value 0 until something sets it again.
+
+The toggle works as before when the library comes back to the main window.
+
+`show_maximized_library` is a persistent control: Mixxx writes the value to
+`mixxx.cfg`. Each stock skin sets the control to 0 in its `skin.xml` when it
+loads, thus the value of the last run does not come back on the screen. A
+library that goes out also writes 0 to the file.
 
 ## The skins
 
@@ -105,7 +132,7 @@ to 0. The same happens when a skin fails to load.
 | `src/librarywindow/librarywindowmanager.cpp` | Finds the library area, moves it, and follows the control |
 | `src/librarywindow/wlibrarywindow.cpp` | The window: style, geometry, close |
 | `src/librarywindow/librarywindowfocus.cpp` | The rule that says when a window must become active |
-| `src/test/librarywindowmanagertest.cpp` | 10 tests of the manager on a skin tree of test widgets |
+| `src/test/librarywindowmanagertest.cpp` | 13 tests of the manager on a skin tree of test widgets |
 | `src/test/librarywindowfocustest.cpp` | 5 tests of the focus rule |
 
 The hooks into upstream files are small:
@@ -115,8 +142,8 @@ The hooks into upstream files are small:
 - `src/widget/wsingletoncontainer.cpp`: a container does not take a singleton
   that lives in another window.
 - `src/skin/skincontrols.cpp`: the new control.
-- `src/widget/wmainmenubar.cpp`: the menu entry, and the application context
-  for the full screen shortcut.
+- `src/widget/wmainmenubar.cpp`: the menu entry, the application context for
+  the full screen shortcut, and the grey "Maximize Library" entry.
 - `src/library/librarycontrol.cpp`: make the window of a library widget active
   before the widget takes the focus.
 - `res/keyboard/en_US.kbd.cfg`: the line `ViewMenu_ShowLibraryWindow Ctrl+7`,
@@ -125,9 +152,6 @@ The hooks into upstream files are small:
 ## What is not done
 
 - The QML skin has no library window.
-- "Maximize Library" while the library is detached leaves the main window
-  almost empty, because that page of the skin holds only small decks and the
-  library. Use it only while the library is in the main window.
 - The size of the sidebar comes from the splitter of the skin, which keeps one
   ratio for both windows. Drag the splitter in the library window to correct
   it.

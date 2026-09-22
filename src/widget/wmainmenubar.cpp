@@ -399,6 +399,22 @@ void WMainMenuBar::initialize() {
     createVisibilityControl(pViewLibraryWindow,
             ConfigKey(kSkinGroup, QStringLiteral("show_library_window")));
     pViewMenu->addAction(pViewLibraryWindow);
+    // The maximized page of a skin is empty while the library is out. Each
+    // visibility control comes up again with the entry on, thus set it again.
+    auto disableMaximizeLibrary = [pViewMaximizeLibrary, pViewLibraryWindow]() {
+        pViewMaximizeLibrary->setDisabled(pViewLibraryWindow->isChecked());
+    };
+    connect(pViewLibraryWindow, &QAction::toggled, pViewMaximizeLibrary, &QAction::setDisabled);
+    connect(this,
+            &WMainMenuBar::internalOnNewSkinLoaded,
+            pViewMaximizeLibrary,
+            disableMaximizeLibrary);
+#ifdef __LINUX__
+    connect(this,
+            &WMainMenuBar::internalFullScreenStateChange,
+            pViewMaximizeLibrary,
+            disableMaximizeLibrary);
+#endif
 
     pViewMenu->addSeparator();
 

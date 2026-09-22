@@ -18,6 +18,8 @@
 namespace {
 
 const ConfigKey kShowKey(QStringLiteral("[Skin]"), QStringLiteral("show_library_window"));
+const ConfigKey kMaximizedKey(
+        QStringLiteral("[Skin]"), QStringLiteral("show_maximized_library"));
 const QString kLibrarySingleton = QStringLiteral("LibrarySingleton");
 const QString kPreviewSingleton = QStringLiteral("PreviewSingleton");
 
@@ -37,6 +39,7 @@ class LibraryWindowManagerTest : public MixxxTest {
   protected:
     void SetUp() override {
         m_pShowControl = std::make_unique<ControlPushButton>(kShowKey);
+        m_pMaximizedControl = std::make_unique<ControlPushButton>(kMaximizedKey);
         m_pMainWindow = std::make_unique<QWidget>();
 
         m_pSkinRoot = new QWidget(m_pMainWindow.get());
@@ -79,6 +82,7 @@ class LibraryWindowManagerTest : public MixxxTest {
     void TearDown() override {
         m_pManager.reset();
         m_pMainWindow.reset();
+        m_pMaximizedControl.reset();
         m_pShowControl.reset();
     }
 
@@ -106,8 +110,15 @@ class LibraryWindowManagerTest : public MixxxTest {
         m_pShowControl->set(show ? 1.0 : 0.0);
     }
 
+    /// The manager takes this control through the event loop.
+    void setMaximized(bool maximized) {
+        m_pMaximizedControl->set(maximized ? 1.0 : 0.0);
+        QApplication::processEvents();
+    }
+
     QDomDocument m_dom;
     std::unique_ptr<ControlPushButton> m_pShowControl;
+    std::unique_ptr<ControlPushButton> m_pMaximizedControl;
     std::unique_ptr<QWidget> m_pMainWindow;
     std::unique_ptr<SkinContext> m_context;
     QWidget* m_pSkinRoot;
@@ -258,6 +269,55 @@ TEST_F(LibraryWindowManagerTest, ASkinReloadKeepsTheWindow) {
     EXPECT_TRUE(m_pManager->isDetached());
     ASSERT_NE(nullptr, findWindow());
     EXPECT_EQ(findWindow(), m_pLibraryArea->window());
+}
+
+TEST_F(LibraryWindowManagerTest, TheLibraryOutTurnsTheMaximizedPageOff) {
+    // The maximized page of a skin holds only the small decks and the place of
+    // the library, thus a maximized library hides the main window.
+    m_pManager->setSkin(m_pSkinRoot);
+    setMaximized(true);
+
+    setShow(true);
+
+    EXPECT_TRUE(m_pManager->isDetached());
+    EXPECT_FALSE(m_pMaximizedControl->toBool());
+}
+
+TEST_F(LibraryWindowManagerTest, AMaximizeRequestDoesNothingWhileTheLibraryIsOut) {
+    m_pManager->setSkin(m_pSkinRoot);
+    setShow(true);
+    ASSERT_TRUE(m_pManager->isDetached());
+
+    setMaximized(true);
+
+    EXPECT_FALSE(m_pMaximizedControl->toBool());
+    EXPECT_TRUE(m_pManager->isDetached());
+}
+
+TEST_F(LibraryWindowManagerTest, ALateMaximizeRequestLeavesTheLibraryBackAlone) {
+    // The manager takes the control through the event loop, thus the slot must
+    // read the state of the window and not the state at the time of the set.
+    m_pManager->setSkin(m_pSkinRoot);
+    setShow(true);
+    ASSERT_TRUE(m_pManager->isDetached());
+
+    m_pMaximizedControl->set(1.0);
+    setShow(false);
+    QApplication::processEvents();
+
+    EXPECT_FALSE(m_pManager->isDetached());
+    EXPECT_TRUE(m_pMaximizedControl->toBool());
+}
+
+TEST_F(LibraryWindowManagerTest, TheLibraryBackGivesTheMaximizedPageBack) {
+    m_pManager->setSkin(m_pSkinRoot);
+    setShow(true);
+    setShow(false);
+    ASSERT_FALSE(m_pManager->isDetached());
+
+    setMaximized(true);
+
+    EXPECT_TRUE(m_pMaximizedControl->toBool());
 }
 
 } // namespace

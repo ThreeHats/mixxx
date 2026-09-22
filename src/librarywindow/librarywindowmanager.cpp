@@ -18,6 +18,9 @@ const mixxx::Logger kLogger("LibraryWindowManager");
 const ConfigKey kShowConfigKey(
         QStringLiteral("[Skin]"), QStringLiteral("show_library_window"));
 
+const ConfigKey kMaximizedConfigKey(
+        QStringLiteral("[Skin]"), QStringLiteral("show_maximized_library"));
+
 } // namespace
 
 LibraryWindowManager::LibraryWindowManager(UserSettingsPointer pConfig,
@@ -29,9 +32,16 @@ LibraryWindowManager::LibraryWindowManager(UserSettingsPointer pConfig,
           m_pMainWindow(pMainWindow),
           m_pKeyboard(pKeyboard),
           m_windowGeneration(0),
-          m_pShowControl(make_parented<ControlProxy>(kShowConfigKey, this)) {
+          m_pShowControl(make_parented<ControlProxy>(kShowConfigKey, this)),
+          m_pMaximizedControl(
+                  make_parented<ControlProxy>(kMaximizedConfigKey, this)) {
     m_pShowControl->connectValueChanged(
             this, &LibraryWindowManager::slotShowControlChanged);
+    // A skin writes this control back when the page of the stack changes. A
+    // queued connection keeps the manager out of that chain.
+    m_pMaximizedControl->connectValueChanged(this,
+            &LibraryWindowManager::slotMaximizedControlChanged,
+            Qt::QueuedConnection);
 }
 
 LibraryWindowManager::~LibraryWindowManager() {
@@ -68,6 +78,14 @@ void LibraryWindowManager::slotShowControlChanged(double value) {
         detach();
     } else {
         attach();
+    }
+}
+
+void LibraryWindowManager::slotMaximizedControlChanged() {
+    // The maximized page of a skin holds the small decks and the place of the
+    // library. While the library is out, that page shows almost nothing.
+    if (isDetached() && m_pMaximizedControl->toBool()) {
+        m_pMaximizedControl->set(0.0);
     }
 }
 
@@ -128,6 +146,8 @@ void LibraryWindowManager::detach() {
     if (m_pWindow || m_pLibraryContainer.isNull() || m_pMainWindow.isNull()) {
         return;
     }
+    // Give the main window the usual page back before the library goes out.
+    m_pMaximizedControl->set(0.0);
 
     auto pWindow = std::make_unique<WLibraryWindow>(m_pConfig);
     pWindow->applyStyle(m_pMainWindow->styleSheet(),
