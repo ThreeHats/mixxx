@@ -485,6 +485,11 @@ void Tooltips::addStandardTooltips() {
             << tr("Adjust Beatgrid")
             << tr("Adjust beatgrid to match another playing deck.");
 
+    add("beats_set_downbeat")
+            << tr("Set Downbeat")
+            << QString("%1: %2").arg(leftClick, tr("Set the downbeat to the beat closest to the current play position."))
+            << QString("%1: %2").arg(rightClick, tr("Move the downbeat one beat later."));
+
     add("beats_undo_adjustment")
             << tr("Revert last BPM/Beatgrid Change")
             << tr("Revert last BPM/Beatgrid Change of the loaded track.");

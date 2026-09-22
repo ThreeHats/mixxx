@@ -373,6 +373,15 @@
                 </Children>
               </WidgetGroup><!-- /beats later & slower -->
 
+              <Template src="skins:LateNight/controls/button_1state_right_optional.xml"><!-- Downbeat -->
+                <SetVariable name="TooltipId">beats_set_downbeat</SetVariable>
+                <SetVariable name="ObjectName">BeatDownbeatLarge</SetVariable>
+                <SetVariable name="Size">26f,52f</SetVariable>
+                <SetVariable name="BtnSize">library_tall</SetVariable>
+                <SetVariable name="ConfigKey"><Variable name="Group"/>,beats_set_downbeat</SetVariable>
+                <SetVariable name="ConfigKeyRight"><Variable name="Group"/>,beats_downbeat_later</SetVariable>
+              </Template>
+
               <WidgetGroup><!-- Undo & Lock -->
                 <Layout>vertical</Layout>
                 <Size>26f,52f</Size>
