@@ -28,6 +28,8 @@ new upstream version, merge `upstream/main` into `muxic`.
 | Floating library window | `src/librarywindow/` | `docs/library-window.md` |
 | OSC state server | `src/osc/`, `src/preferences/dialog/dlgprefosc.*` | `docs/osc.md` |
 | More library columns | `src/muxic/librarycolumns/` | `docs/library-columns.md` |
+| Downbeat detection | `src/muxic/downbeats/`, `src/track/beats.*` | `docs/downbeats.md` |
+| Related tracks panel | `src/muxic/relatedtracks/` | `docs/related-tracks.md` |
 | Small fixes | `src/widget/wlibrarytableview.cpp`, header restore | `docs/small-fixes.md` |
 
 `src/stems/`, `src/osc/` and `src/librarywindow/` are subsystems with a CMake
